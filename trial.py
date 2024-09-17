@@ -1,6 +1,8 @@
-from PySide6.QtWidgets import QApplication, QPushButton, QWidget, QVBoxLayout,QLabel,QFrame,QSizePolicy,QBoxLayout,QGridLayout
+from PySide6.QtWidgets import QApplication, QPushButton, QWidget, QVBoxLayout,QLabel,QFrame,QSizePolicy,QBoxLayout,QGridLayout,QFileDialog
 from PySide6.QtCore import QPropertyAnimation, QPoint,QSize,QObject
 from PySide6.QtGui import QIcon,QPixmap,Qt,QImage
+import os
+import openpyxl
 
 class mainApp(QWidget):
     
@@ -40,9 +42,11 @@ class mainApp(QWidget):
                 temp.setText("Button Clicked!")
             else:
                 temp.setText("Button1")
-        
-        
-        print (temp.findChild(QObject))
+        file=QFileDialog.getOpenFileName(caption="Select a proper file ")
+        print(file[0])
+        if isinstance(temp, QPushButton):
+            ...
+            #print (temp.objectName)
         
 
 def createButton(buttonWidth:int, buttonHeight:int,positionX:int=0,positionY:int=0,buttonName:str=""
@@ -83,9 +87,16 @@ def createPicturedLabel(imagePath:str,labelName:str)->QGridLayout:
     layout.addWidget(labelText,1,1)
     return layout
 
-
-if __name__ == "__main__":
+def documentCreationTest():
     app=QApplication([])
     window = mainApp()
     window.show()
     app.exec()
+    path=os.path.join(os.path.expanduser("~"), "Documents","test folder creation")
+    print (path)
+    os.makedirs(path, exist_ok=True)
+if __name__ == "__main__":
+    workbook=openpyxl.load_workbook(r"C:\Users\Bala krishnan\OneDrive\Documents\Python projects\KPI Application\Test Data\NC.xlsx")
+    worksheet=workbook["Sheet1"]
+    worksheet["8"]="Hello"
+    workbook.save(r"C:\Users\Bala krishnan\OneDrive\Documents\Python projects\KPI Application\Test Data\NC.xlsx")

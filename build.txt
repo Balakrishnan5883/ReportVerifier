@@ -1,0 +1,1 @@
+pyinstaller --onefile --add-data 'Icons/*;Icons' --add-data 'CheckUnfilledTeams.py;.' --add-data 'mainWindowUI.py;.' main.py
