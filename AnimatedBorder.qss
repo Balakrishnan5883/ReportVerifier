@@ -1,0 +1,15 @@
+
+QLabel{
+    padding: 2em;
+    opacity: 0.1;
+    width: 300px;
+    text-align: center;
+    border-radius: 10px;
+    background-color: qlineargradient(
+    x1: 0, y1: 0, x2: 1, y2: 0,
+    stop: 0 red, stop: 0.5 yellow, stop: 1 green);
+    border: 1px solid black;
+    padding: 5px;
+
+
+}

@@ -6,7 +6,7 @@ application = QApplication(sys.argv)
 
 mainWindow = KPIMainWindow()
 
-
+application.setStyleSheet(open("Styles.css","r").read())
 
 mainWindow.show()
 sys.exit  (application.exec())

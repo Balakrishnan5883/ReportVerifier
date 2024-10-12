@@ -18,6 +18,7 @@ class mainApp(QWidget):
         self.labelBackground=QLabel()
         self.labelBackground.setStyleSheet("background-color: grey;")
         self.label1=createPicturedLabel(r"Icons\SpainFlag.png","WES")
+
         
 
         layout = QBoxLayout(QBoxLayout.Direction.LeftToRight)
@@ -27,10 +28,13 @@ class mainApp(QWidget):
         layout.addWidget(self.labelText)
 
         self.button1=createButton(buttonWidth=100,buttonHeight=100,buttonName="Button1")
-        self.button1.setObjectName("Button1 Check Ok")
+        self.button1.setObjectName("Hello")
         self.button1.clicked.connect(self.buttonAction)
         layout.addWidget(self.button1)
 
+        #self.button2=createButton(buttonWidth=100,buttonHeight=100,buttonName="Button2")
+        #self.button2.clicked.connect(self.buttonAction)
+        #layout.addWidget(self.button2)
 
         
         self.setLayout(layout)
@@ -42,9 +46,9 @@ class mainApp(QWidget):
                 temp.setText("Button Clicked!")
             else:
                 temp.setText("Button1")
-        file=QFileDialog.getOpenFileName(caption="Select a proper file ")
-        print(file[0])
-        if isinstance(temp, QPushButton):
+        #file=QFileDialog.getOpenFileName(caption="Select a proper file ")
+        #print(file[0])
+        #if isinstance(temp, QPushButton):
             ...
             #print (temp.objectName)
         
@@ -57,7 +61,7 @@ def createButton(buttonWidth:int, buttonHeight:int,positionX:int=0,positionY:int
     button.setIconSize(QSize(buttonWidth, buttonHeight))
     button.setIcon(QIcon(imagePath))
     button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-    button.setStyleSheet("background-color: rgba(255, 255, 255, 0);")
+    
     if not(toolTip==""):
         button.setToolTip(toolTip)
     button.setToolTipDuration(2000)
@@ -95,8 +99,19 @@ def documentCreationTest():
     path=os.path.join(os.path.expanduser("~"), "Documents","test folder creation")
     print (path)
     os.makedirs(path, exist_ok=True)
-if __name__ == "__main__":
+
+def writeTestExcel():
     workbook=openpyxl.load_workbook(r"C:\Users\Bala krishnan\OneDrive\Documents\Python projects\KPI Application\Test Data\NC.xlsx")
     worksheet=workbook["Sheet1"]
-    worksheet["8"]="Hello"
+    worksheet["c8"]="Hello"
     workbook.save(r"C:\Users\Bala krishnan\OneDrive\Documents\Python projects\KPI Application\Test Data\NC.xlsx")
+
+def CSSstyledWidget():
+    app=QApplication([])
+    app.setStyleSheet(open("AnimatedBorder.qss").read())
+    window = mainApp()
+    window.show()
+    app.exec()
+
+if __name__ == "__main__":
+    CSSstyledWidget()

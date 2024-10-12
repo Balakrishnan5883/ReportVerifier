@@ -1,74 +1,86 @@
 from datetime import datetime
 
 WIT:dict[str,str] = {"teamName":"Wittur Italy","icon":"Icons\\ItalyFlag.jpeg", "teamLeader":"John","abbrevation":"WIT"}
-WES:dict[str,str] = {"teamName":"Wittur Spain","icon":"Icons\\SpainFlag.png", "teamLeader":"Bill","abbrevation":"WES"}
+WES:dict[str,str] = {"teamName":"Wittur Spain","icon":"Icons\\SpainFlag.png", "teamLeader":"Bill","abbrevation":"WES Doors"}
 WHU:dict[str,str] = {"teamName":"Wittur Hungary","icon":"Icons\\HungaryFlag.jpg", "teamLeader":"Arpad","abbrevation":"WHU"}
 SSC:dict[str,str] = {"teamName":"Shared Service Center","icon":"Icons\\IndiaFlag.png", "teamLeader":"Lance","abbrevation":"SSC"}
-WAT:dict[str,str] = {"teamName":"Wittur Austria","icon":"Icons\\AustriaFlag.png", "teamLeader":"Dan","abbrevation":"WAT"}
+WAT:dict[str,str] = {"teamName":"Wittur Austria","icon":"Icons\\AustriaFlag.png", "teamLeader":"Dan","abbrevation":"WAT Slings"}
 WAR:dict[str,str] = {"teamName":"Wittur Argentina","icon":"Icons\\ArgentinaFlag.jpg", "teamLeader":"Dave","abbrevation":"WAR"}
 
 activeWeek:int = datetime.now().isocalendar()[1]
-activeMonth:int = datetime.now().month
+activeMonth:int = datetime.now().month-1
 
 
 LTActiveRowIndex=activeWeek+1
-OTDActiveRowIndex=activeMonth+1
+OTDActiveRowIndex=activeWeek+1
+def getColumnAlphabetfromNumber(column_number:int)->str:
+    result = ""
+    while column_number > 0:
+        column_number -= 1
+        remainder = column_number % 26
+        result = chr(65 + remainder) + result
+        column_number //= 26
+    return result
+
+NCActiveColumnIndex=getColumnAlphabetfromNumber(activeMonth+4)
+ClaimsActiveColumnIndex=getColumnAlphabetfromNumber(activeMonth+4)
+TSSActiveRowIndex=activeMonth+1
 
 
-team_report:dict[str,dict] = {
+team_report:dict[str,dict[str,tuple]] = {
     "LT & Orders": 
     {
-        'WIT':(WIT, {'Sheet1':[f'C{LTActiveRowIndex}']}),
-        'WES':(WES,{'Sheet1':[f'D{LTActiveRowIndex}']}),
-        'WHU':(WHU,{'Sheet1':[f'F{LTActiveRowIndex}']}),
-        'SSC':(SSC,{'Sheet1':[f'H{LTActiveRowIndex}']}),
-        'WAT':(WAT,{'Sheet1':[f'E{LTActiveRowIndex}']}),
-        'WAR':(WAR,{'Sheet1':[f'G{LTActiveRowIndex}']}),
+        WIT['abbrevation']:(WIT, {'Sheet1':[f'C{LTActiveRowIndex}']}),
+        WES['abbrevation']:(WES,{'Sheet1':[f'D{LTActiveRowIndex}']}),
+        WHU['abbrevation']:(WHU,{'Sheet1':[f'F{LTActiveRowIndex}']}),
+        SSC['abbrevation']:(SSC,{'Sheet1':[f'H{LTActiveRowIndex}']}),
+        WAT['abbrevation']:(WAT,{'Sheet1':[f'E{LTActiveRowIndex}']}),
+        WAR['abbrevation']:(WAR,{'Sheet1':[f'G{LTActiveRowIndex}']}),
 
     },
     "On Time Delivery": 
     {
-        'WIT':(WIT, {'Sheet1':[f'C{OTDActiveRowIndex}']}),
-        'WES':(WES,{'Sheet1':[f'D{OTDActiveRowIndex}']}),
-        'SSC':(SSC,{'Sheet1':[f'H{OTDActiveRowIndex}']}),
-        'WAR':(WAR,{'Sheet1':[f'G{OTDActiveRowIndex}']}),    
+        WIT['abbrevation']:(WIT, {'Sheet1':[f'C{OTDActiveRowIndex}']}),
+        WES['abbrevation']:(WES,{'Sheet1':[f'D{OTDActiveRowIndex}']}),
+        SSC['abbrevation']:(SSC,{'Sheet1':[f'H{OTDActiveRowIndex}']}),
+        WAR['abbrevation']:(WAR,{'Sheet1':[f'G{OTDActiveRowIndex}']}),    
     },
     "Efficiency":
     {
-        'WIT':(WIT, {'Sheet1':['C2']}),
-        'WES':(WES, {'Sheet1':['D2']}),
-        'WHU':(WHU, {'Sheet1':['F2']}),
-        'SSC':(SSC, {'Sheet1':['H2']}),
-        'WAT':(WAT, {'Sheet1':['E2']}),
-        'WAR':(WAR, {'Sheet1':['G2']}),
+        WIT['abbrevation']:(WIT, {'Sheet1':['C2']}),
+        WES['abbrevation']:(WES, {'Sheet1':['D2']}),
+        WHU['abbrevation']:(WHU, {'Sheet1':['F2']}),
+        SSC['abbrevation']:(SSC, {'Sheet1':['H2']}),
+        WAT['abbrevation']:(WAT, {'Sheet1':['E2']}),
+        WAR['abbrevation']:(WAR, {'Sheet1':['G2']}),
     },
     "NC":
     {
-        'WIT':(WIT, {'Sheet1':['C2']}),
-        'WES':(WES, {'Sheet1':['D2']}),
-        'SSC':(SSC, {'Sheet1':['H2']}),
-        'WAT':(WAT, {'Sheet1':['E2']}),
-        'WHU':(WES, {'Sheet1':['F2']}),
-        'WAR':(WES, {'Sheet1':['G2']}),
+        WIT['abbrevation']:(WIT, {'Sheet1':[f'{NCActiveColumnIndex}5']}),
+        WES['abbrevation']:(WES, {'Sheet1':[f'{NCActiveColumnIndex}6']}),
+        SSC['abbrevation']:(SSC, {'Sheet1':[f'{NCActiveColumnIndex}10']}),
+        WAT['abbrevation']:(WAT, {'Sheet1':[f'{NCActiveColumnIndex}7']}),
+        WHU['abbrevation']:(WES, {'Sheet1':[f'{NCActiveColumnIndex}8']}),
+        WAR['abbrevation']:(WES, {'Sheet1':[f'{NCActiveColumnIndex}9']}),
     },
     "Claims":
     {
-        'WIT':(WIT, {'Sheet1':['C2']}),
-        'WES':(WES, {'Sheet1':['D2']}),
-        'SSC':(SSC, {'Sheet1':['H2']}),
-        'WAT':(WAT, {'Sheet1':['E2']}),
-        'WAR':(WAR, {'Sheet1':['G2']}),
-        'WHU':(WHU, {'Sheet1':['F2']}),
+        WIT['abbrevation']:(WIT, {'Sheet1':[f'{ClaimsActiveColumnIndex}5']}),
+        WES['abbrevation']:(WES, {'Sheet1':[f'{ClaimsActiveColumnIndex}6']}),
+        SSC['abbrevation']:(SSC, {'Sheet1':[f'{ClaimsActiveColumnIndex}10']}),
+        WAT['abbrevation']:(WAT, {'Sheet1':[f'{ClaimsActiveColumnIndex}7']}),
+        WAR['abbrevation']:(WAR, {'Sheet1':[f'{ClaimsActiveColumnIndex}9']}),
+        WHU['abbrevation']:(WHU, {'Sheet1':[f'{ClaimsActiveColumnIndex}8']}),
 
     },
     "Technical Sales Support":
     {
-        'WIT':(WIT, {'Sheet1':['C2']}),
-        'WES':(WES, {'Sheet1':['D2']}),
-        'SSC':(SSC, {'Sheet1':['H2']}),
-        'WAT':(WAT, {'Sheet1':['E2']}),
-        'WAR':(WAR, {'Sheet1':['G2']}),
-        'WHU':(WHU, {'Sheet1':['F2']}),
+        WIT['abbrevation']:(WIT, {'Sheet1':[f'C{TSSActiveRowIndex}']}),
+        WES['abbrevation']:(WES, {'Sheet1':[f'D{TSSActiveRowIndex}']}),
+        SSC['abbrevation']:(SSC, {'Sheet1':[f'H{TSSActiveRowIndex}']}),
+        WAT['abbrevation']:(WAT, {'Sheet1':[f'E{TSSActiveRowIndex}']}),
+        WAR['abbrevation']:(WAR, {'Sheet1':[f'G{TSSActiveRowIndex}']}),
+        WHU['abbrevation']:(WHU, {'Sheet1':[f'F{TSSActiveRowIndex}']}),
 
 
     }

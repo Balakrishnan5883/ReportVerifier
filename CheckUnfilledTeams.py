@@ -1,11 +1,14 @@
 import openpyxl
 import datetime
 import os
+import win32com.client
+
 
 import openpyxl.cell
 import openpyxl.workbook
 import openpyxl.worksheet
 import openpyxl.worksheet.worksheet
+from copyPasteLinksOfPDF import copyPasteLinksofPDF
             
 supportedExcelExtensions=[".xlsx",".xlsm",".xltx",".xltm"]
 
@@ -19,12 +22,18 @@ def from_json(json_data: dict):
     return TeamData(json_data["team_name"], json_data["team_leader"])
 
 class KPIreportVerifier:
-    def __init__(self):
+    def __init__(self,checkingFrequency:str="",reportPDFLocation:str="",reportTemplatePDFLocation:str=""):
         self.report_location = ""
         self.teams = []
         self.responsibleData:dict[str,dict[str,list[str]]]={}
         self.isReportChecked=False
         self.isExcelPathPresent=False
+        self.reportGenerated=False
+        self.checkingFrequency=checkingFrequency
+        self.reportPDFLocation:str=reportPDFLocation
+        self.reportTemplatePDFLocation:str=reportTemplatePDFLocation
+        self.MacroModule:str=""
+        self.macroName:str=""
 
     def add_team(self, team_data,responsibleData:dict[str,list[str]]):
         self.teams.append(team_data)
@@ -54,7 +63,7 @@ class KPIreportVerifier:
                   f"    ExcelPathDeclared:{self.isExcelPathPresent}\n")
             return list(self.teams)
             
-        workbook = openpyxl.load_workbook(self.report_location,read_only=True)
+        workbook = openpyxl.load_workbook(self.report_location,read_only=True,data_only=True)
 
         for team_data, sheet_cell_dict in self.responsibleData.items():
             for sheet_name, cell_list in sheet_cell_dict.items():
@@ -78,6 +87,38 @@ class KPIreportVerifier:
         workbook.close()
         self.isReportChecked=True
         return list(set(unfilled_teams))
+    
+    def runExcelMacro(self):
+        if (self.MacroModule=="" or self.macroName==""):
+            print("Macro not defined")
+            return
+        excelApp=win32com.client.Dispatch("Excel.Application")
+        excelApp.Visible=False
+        workBook=excelApp.Workbooks.Open(self.report_location)
+        self.reportName=self.report_location.split(r"/")[-1]
+        try:
+            excelApp.Application.Run(f"'{workBook.Name}'!{self.MacroModule}.{self.macroName}")
+        except Exception as e:
+            print(f"Error running macro: {e}")
+        finally:
+            workBook.Close(SaveChanges=False)
+            excelApp.Quit()
+            workBook = None
+            excelApp = None
+
+    def generatePDFReport(self):
+        if self.isReportChecked==False:
+            print("Report completion check failed")
+            return
+        if not (os.path.exists(self.reportPDFLocation) or os.path.exists(self.reportTemplatePDFLocation)):
+            print(f"one of the PDF is not found"
+                  f"report PDF exists ? : {os.path.exists(self.reportPDFLocation)}"
+                  f"template PDF exists ?: {os.path.exists(self.reportTemplatePDFLocation)}")
+            return
+        copyPasteLinksofPDF(sourcePDF=self.reportTemplatePDFLocation,destinationPDF=self.reportPDFLocation)
+        self.reportGenerated=True
+        
+        
 
 if __name__ == "__main__":
     

@@ -1,0 +1,24 @@
+
+
+QMainWindow
+{
+    background-image: url("Icons/Background4.jpg");
+    background-size: cover;
+    background-repeat: no-repeat;
+    background-position: center;
+        
+}
+QLabel{
+    color: #000000;
+    background-color: rgba(82, 168, 215, 0.45);
+    font-weight: 700;
+    /*border-style: double;
+    border-width: 2px;
+    border-color: blue;*/
+    border-radius: 10%;
+}
+QPushButton {
+    background-image: -moz-linear-gradient();
+    word-wrap: normal;
+    color: rgb(255, 255, 255);
+}
