@@ -1,14 +1,22 @@
 from PySide6.QtWidgets import (QMainWindow,QWidget,QPushButton,QStatusBar,QLabel,QLineEdit
-                               ,QGridLayout,QVBoxLayout,QHBoxLayout,QSizePolicy,QBoxLayout,
+                               ,QGridLayout,QHBoxLayout,QSizePolicy,QSystemTrayIcon,
                                QFileDialog,QCheckBox,QScrollArea,QMessageBox)
-from PySide6.QtGui import QIcon,QPixmap
-from PySide6.QtCore import QSize,QPropertyAnimation,QPoint,Qt
-from CheckUnfilledTeams import TeamData,KPIreportVerifier,supportedExcelExtensions, from_json
+from PySide6.QtGui import QCloseEvent, QIcon
+from PySide6.QtCore import QSize,Qt,QTimer,SignalInstance
+from CheckUnfilledTeams import KPIreportVerifier,supportedExcelExtensions,runExcelMacro
 import json
 from datetime import datetime
+import time
 import os
-from teamDatas import team_report,reports,activeMonth,activeWeek
-from zoneinfo import ZoneInfo
+from teamDatas import (reportsAndTeamsDict,reports,reportMonth,
+                       reportWeek,columnsAndDataTypes,logFilePath)
+from LogData import Database
+import calendar
+from copyPasteLinksOfPDF import copyPasteLinksofPDF
+import types
+
+
+
 appName="KPI reviewer"
 
 mainWindowWidth = 750
@@ -149,7 +157,7 @@ class individualReportLayout():
         self.buttonsList:list[QPushButton]=[]
 
         
-        self.updatedTimeLabel=QLabel("Last Updated:")
+        self.updatedTimeLabel=QLabel("Last Updated: Waiting for refresh")
         self.updatedTimeLabel.setStyleSheet("background-color: rgba(255, 255, 255, 0);")
         self.generateReportButton=QPushButton("Generate Report")
         self.generateReportButton.setObjectName(f"{self.reportName}_GenerateReport")
@@ -217,34 +225,30 @@ class individualReportLayout():
 
 class KPIMainWindow(QMainWindow):
 
-    
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("KPI Remainder")
-        
+        self.createUI()
+        self.loadUnfilledTeamsLogic()
+        self.resize(mainWindowWidth,mainWindowHeight)
+        self.addHeaderObjects("KPI Updated status")
+        self.alignObjects()
+        self.createStatusWindow()
+        self.settingsWindow=settingsWidget()
+        self.settingsButton.clicked.connect(lambda:self.settingsWindow.scrollBar.show())
+        self.messageBox=QMessageBox()
+
+        #self.refreshAllData()
+
+
+    def createUI(self):
         self.reportsLayoutDict:dict[str,individualReportLayout]={}
         for report in reports:
             self.reportsLayoutDict[report]=individualReportLayout(report)
-        
 
-        self.addTeamButtons()
-        self.loadUnfilledTeamsLogic()
-        self.resize(mainWindowWidth,mainWindowHeight)
-        self.addKPIObjects("KPI Updated status")
-        self.alignObjects()
-        self.settingsWindow=settingsWidget()
-        self.settingsButton.clicked.connect(lambda:self.settingsWindow.scrollBar.show())
-        
-        for layoutName,layoutObject in self.reportsLayoutDict.items():
-            layoutObject.refreshButton.clicked.connect( self.refreshButtonClickedAction)
-            layoutObject.generateReportButton.clicked.connect(self.generateReport)
-
-        self.refreshAllData()
-    def addTeamButtons(self) -> None:
         varButtonHeight=25
         varButtonWidth=50
-        
-        for report,teamsInReport in team_report.items():
+        for report,teamsInReport in reportsAndTeamsDict.items():
             for teamAbbrevation,teamDataTuple in teamsInReport.items():
                 teamData=teamDataTuple[0]
                 teamFlag=teamData["icon"]
@@ -253,11 +257,14 @@ class KPIMainWindow(QMainWindow):
                 buttonName=teamAbbrevation, imagePath=teamFlag,buttonDescription=teamData["teamName"])
                 teamData=None
                 teamFlag=None
-
-
         for layout in self.reportsLayoutDict.values():
             for button in layout.buttonsList:
                 button.clicked.connect(self.flagButtonClickedAction)
+        for layoutObject in self.reportsLayoutDict.values():
+            layoutObject.refreshButton.clicked.connect( self.refreshButtonClickedAction)
+            layoutObject.generateReportButton.clicked.connect(self.generateReportButtonClickedAction)
+        self.startUnfilledRecheckProcedure=QPushButton()
+        self.startUnfilledRecheckProcedure.clicked.connect(self.recheckProcedure)
 
     def loadUnfilledTeamsLogic(self):
 
@@ -265,10 +272,11 @@ class KPIMainWindow(QMainWindow):
         self.reportVerifierDict:dict[str,KPIreportVerifier]={}
         #setting checking frequency here------------------------------------------------------------------------
         for report in reports:
-
-            self.reportVerifierDict[report]=KPIreportVerifier(checkingFrequency="Monthly")
-
+            self.reportVerifierDict[report]=KPIreportVerifier(reportName=report,checkingFrequency="Monthly")
         self.reportVerifierDict["LT & Orders"].checkingFrequency="Weekly"
+        
+        self.reportVerifierDict["LT & Orders"].isExternalDataRefreshRequired=True
+        self.reportVerifierDict["Claims"].isExternalDataRefreshRequired=True
 
         #setting macroname and location here
         self.reportVerifierDict["LT & Orders"].MacroModule="Sheet1"
@@ -284,7 +292,9 @@ class KPIMainWindow(QMainWindow):
         self.reportVerifierDict["Technical Sales Support"].MacroModule="ThisWorkbook"
         self.reportVerifierDict["Technical Sales Support"].macroName="PrintToPDF"
 
-        for report,teamsInReport in team_report.items():
+        self.reportVerifierDict["LT & Orders"].generateReport=types.MethodType(LTGenerateReportOverride,self.reportVerifierDict["LT & Orders"])
+
+        for report,teamsInReport in reportsAndTeamsDict.items():
             for teamDataTuple in teamsInReport.values():
                 teamData=teamDataTuple[0]
                 self.reportVerifierDict[report].add_team(teamData["teamName"], teamDataTuple[1])
@@ -292,23 +302,22 @@ class KPIMainWindow(QMainWindow):
 
     def refreshButtonClickedAction(self) -> None:
         clickedRefreshButton=self.sender()
-        isReportChecked=False
+        isReportCheckedSuccessfully=False
         for reportKey,reportVerifier in self.reportVerifierDict.items():
             if reportKey in clickedRefreshButton.objectName():
                 reportVerifier.report_location=settingsSaveFile.get(f"{reportKey}_Excel_Path","Key not found")
                 unfilledTeamsList=reportVerifier.get_teams_with_unfilled_cells()
-                isReportChecked=reportVerifier.isReportChecked
+                isReportCheckedSuccessfully=reportVerifier.isSuccessfullyCheckedWithoutErrors
                 tempLabel=self.findChild(QLabel, f"{reportKey}_ActiveTime")
                 if reportVerifier.checkingFrequency=="Weekly" and isinstance(tempLabel,QLabel):
-                    tempLabel.setText(f"Report Week: {activeWeek}")
+                    tempLabel.setText(f"Report Week: {reportWeek}")
                 elif reportVerifier.checkingFrequency=="Monthly"and isinstance(tempLabel,QLabel):
-                    tempLabel.setText(f"Report Month: {datetime(2000,activeMonth,1).strftime('%B')}")
+                    tempLabel.setText(f"Report Month: {calendar.month_name[reportMonth]}")
                 tempLabel=None
                 break
         for teamButton in self.reportsLayoutDict[reportKey].buttonsList:
             teamButton.setStyleSheet("")
-        print(f"Currently checking {reportKey}")
-        if isReportChecked==True and unfilledTeamsList!=[]:
+        if isReportCheckedSuccessfully==True and unfilledTeamsList!=[]:
             for teamName in unfilledTeamsList:
                 print(f"    {reportKey} pending {teamName}")
                 for teamButton in self.reportsLayoutDict[reportKey].buttonsList:
@@ -318,26 +327,23 @@ class KPIMainWindow(QMainWindow):
                         teamButton.setStyleSheet("background-color: rgba(0, 255, 0, 0.2);")
             self.reportsLayoutDict[reportKey].updatedTimeLabel.setText(f"Last Updated : {formattedCurrentDatetime()}")
 
-        elif isReportChecked==True and unfilledTeamsList==[]:
+        elif isReportCheckedSuccessfully==True and unfilledTeamsList==[]:
             for teamButton in self.reportsLayoutDict[reportKey].buttonsList:
                 teamButton.setStyleSheet("background-color: rgba(0, 255, 0, 0.2);")
                 self.reportsLayoutDict[reportKey].updatedTimeLabel.setText(f"Last Updated : {formattedCurrentDatetime()}")
             print("    All teams has filled the data")
 
-        elif isReportChecked==False:
+        elif isReportCheckedSuccessfully==False:
             for teamButton in self.reportsLayoutDict[reportKey].buttonsList:
                 teamButton.setStyleSheet("background-color: rgba(0, 0, 0, 0);")
             self.reportsLayoutDict[reportKey].updatedTimeLabel.setText(f"Error report not updated")
             
-                    
-
-
     def refreshAllData(self) -> None:
         print("Refreshing all data")
         for layout in self.reportsLayoutDict.values():
             layout.refreshButton.click()
         
-    def addKPIObjects(self,buttonText:str) -> None:
+    def addHeaderObjects(self,buttonText:str) -> None:
         self.label=QLabel()
         self.label.setText(buttonText)
         self.settingsButton=createButton(buttonWidth=50,
@@ -356,51 +362,103 @@ class KPIMainWindow(QMainWindow):
 
         self.mainWidget=QWidget() 
         self.mainWidget.setLayout(masterLayout)
-        self.setCentralWidget(self.mainWidget)
+        self.scrollBar=QScrollArea()
+        self.scrollBar.setWidgetResizable(True)
+        self.scrollBar.setWidget(self.mainWidget)
+        self.setCentralWidget(self.scrollBar)
 
+    def createStatusWindow(self) -> None:
+        self.statusWindow=QStatusBar()
+        self.setStatusBar(self.statusWindow)
+        self.statusLabel=QLabel("Ready")
+        self.statusLabel.setFixedHeight(50)
+        self.statusWindow.addWidget(self.statusLabel)
         self.setWindowTitle("DashBoard")
-        
-        
-    def settingButtonClicked(self) -> None:
-        print("Settings button clicked")
     
     def flagButtonClickedAction(self) -> None:
         temp=self.sender()
         if isinstance(temp, QPushButton):
             print(temp.objectName())
 
-    def generateReport(self,checkCompletion:bool=True):
-
-        temp=self.sender()
-        if isinstance(temp, QPushButton):
-            button=temp
-            temp=None
+    def generateReportButtonClickedAction(self,checkCompletion:bool=True):
+        checkCompletion=True
+        if isinstance(self.sender(),QPushButton):
+            button=self.sender()
         else:
-            print("no Button found")
+            print("Button not pressed")
             return
-        if checkCompletion==False:
+
+        for reportKey,reportVerifier in self.reportVerifierDict.items():
+            if reportKey in button.objectName():
+                activeReportName=reportKey
+                activeReport=reportVerifier
+                break
+        if activeReport==None:
+            print("Report not generated, Couldn't find which report the clicked button belongs")
+            return
+        if checkCompletion==False or activeReport.isEveryoneFilled==False:
             msgbox=QMessageBox()
             msgbox.setText("Report Completion check failed do you want to generate anyways?")
             msgbox.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
             if msgbox.exec()==QMessageBox.StandardButton.Yes:
                 checkCompletion=True
+            else:
+                return
         if checkCompletion==True:
-            
-            for reportKey,reportVerifier in self.reportVerifierDict.items():
-                if reportKey in button.objectName():
-                    tempPath1:str=settingsSaveFile.get(f"{reportKey}_Excel_Path", "")
-                    tempPath1=tempPath1.replace(".xlsm",".pdf")
-                    tempPath2=settingsSaveFile.get(f"{reportKey}_Template_PDF_Location", "")
-                    reportVerifier.reportPDFLocation=tempPath1
-                    reportVerifier.reportTemplatePDFLocation=tempPath2
-                    reportVerifier.runExcelMacro()
-                    if checkCompletion==True:reportVerifier.isReportChecked=True
-                    print(f"Currently generating {reportKey}")
-                    reportVerifier.generatePDFReport()
-                    
+            tempPath1:str=settingsSaveFile.get(f"{reportKey}_Excel_Path", "")
+            tempPath1=tempPath1.replace(".xlsm",".pdf")
+            tempPath2=settingsSaveFile.get(f"{reportKey}_Template_PDF_Location", "")
+            activeReport.reportPDFLocation=tempPath1
+            activeReport.reportTemplatePDFLocation=tempPath2
+            print(f"Currently generating {activeReportName}")
+            activeReport.generateReport()
 
+    def recheckProcedure(self) -> None:
+        print(f"Auto check initiated checking for month {calendar.month_name[reportMonth]} and week:{reportWeek} \n")
+        self.unFilledRecheckTimer:QTimer=QTimer(self)
+        self.unFilledRecheckTimer.timeout.connect(self.checkAndGenerateReport)
+        self.unFilledRecheckTimer.start(15000) #30 minutes = 1800000
+        self.checkAndGenerateReport()
         
 
+    def checkAndGenerateReport(self) -> None:
+            self.isRecheckRequired=True
+            message="\n"
+            for reportKey,reportVerifier in self.reportVerifierDict.items():
+                if reportVerifier.isReportGenerated==False:
+                    
+                    self.reportsLayoutDict[reportKey].refreshButton.click()
+                    if len(reportVerifier.unfilled_teams)==0:
+                        self.reportsLayoutDict[reportKey].generateReportButton.click()
+                        if reportVerifier.checkingFrequency=="Weekly":
+                            self.unFilledRecheckTimer.stop()
+                            self.unFilledRecheckTimer.start(30000)
+                            
+                    else:
+                        self.messageBox.setWindowTitle(f"Status for month {calendar.month_name[reportMonth]} and week:{reportWeek}")
+                        self.messageBox.setIcon(QMessageBox.Icon.Information)
+                        message=message+str(f"{reportKey} report not completed \n pending teams : {reportVerifier.unfilled_teams} \n "
+                                                    f"No of times rechecked : {reportVerifier.checkingIterationsRan}\n"
+                                                    "-------------------------------------------------------------\n")
+                        
+                        
+                else:
+                    self.messageBox.setStandardButtons(QMessageBox.StandardButton.Ok)
+                    print(f"{reportKey} report already generated")
+            self.messageBox.setText(message)
+            self.messageBox.show()
+            if any((reportVerifier.isReportGenerated==True and reportVerifier.checkingFrequency=="Weekly") for reportVerifier in self.reportVerifierDict.values()):
+                print ("All weekly reports generated")
+                self.unFilledRecheckTimer.stop()
+                self.unFilledRecheckTimer.start(45000)
+            
+            if all(reportVerifier.isReportGenerated==True for reportVerifier in self.reportVerifierDict.values()):
+                self.isRecheckRequired=False
+
+            if self.isRecheckRequired==False:
+                print("Auto check completed report closing Timer")
+                self.unFilledRecheckTimer.stop()
+                
 
 
 
@@ -420,7 +478,20 @@ def createButton(buttonWidth:int, buttonHeight:int,positionX:int=0,positionY:int
     return button
 
 def formattedCurrentDatetime():
-    return datetime.now().strftime("%d-%b-%y %I:%M %p")
+    return datetime.now().strftime("%d-%m-%Y %H:%M:%S")
 
-
-
+def LTGenerateReportOverride(self:KPIreportVerifier):
+        print(f"{self.reportName} : Report generation procedure overridden")
+        if self.isEveryoneFilled==False:
+            print("Report completion check failed")
+        didMacroRun=runExcelMacro(excelFilePath=self.report_location, modulename=self.MacroModule, macroName=self.macroName)
+        isLinksCopied=copyPasteLinksofPDF(sourcePDF=self.reportTemplatePDFLocation,destinationPDF=self.reportPDFLocation)
+        if not (didMacroRun and isLinksCopied):
+            print(f"Report generation failed"
+                    f"Macro ran ?: {didMacroRun}"
+                    f"links copied ?: {isLinksCopied}")
+        if didMacroRun and isLinksCopied:
+            self.isReportGenerated=True
+        else:
+            self.isReportGenerated=False
+        self.markReportGenerationStatus()

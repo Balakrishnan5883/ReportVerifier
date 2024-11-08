@@ -1,4 +1,5 @@
 from datetime import datetime
+import os,sys
 
 WIT:dict[str,str] = {"teamName":"Wittur Italy","icon":"Icons\\ItalyFlag.jpeg", "teamLeader":"John","abbrevation":"WIT"}
 WES:dict[str,str] = {"teamName":"Wittur Spain","icon":"Icons\\SpainFlag.png", "teamLeader":"Bill","abbrevation":"WES Doors"}
@@ -7,12 +8,12 @@ SSC:dict[str,str] = {"teamName":"Shared Service Center","icon":"Icons\\IndiaFlag
 WAT:dict[str,str] = {"teamName":"Wittur Austria","icon":"Icons\\AustriaFlag.png", "teamLeader":"Dan","abbrevation":"WAT Slings"}
 WAR:dict[str,str] = {"teamName":"Wittur Argentina","icon":"Icons\\ArgentinaFlag.jpg", "teamLeader":"Dave","abbrevation":"WAR"}
 
-activeWeek:int = datetime.now().isocalendar()[1]
-activeMonth:int = datetime.now().month-1
+reportWeek:int = datetime.now().isocalendar()[1]
+reportMonth:int = datetime.now().month-1
 
 
-LTActiveRowIndex=activeWeek+1
-OTDActiveRowIndex=activeWeek+1
+LTActiveRowIndex=reportWeek+1
+OTDActiveRowIndex=reportWeek+1
 def getColumnAlphabetfromNumber(column_number:int)->str:
     result = ""
     while column_number > 0:
@@ -22,12 +23,17 @@ def getColumnAlphabetfromNumber(column_number:int)->str:
         column_number //= 26
     return result
 
-NCActiveColumnIndex=getColumnAlphabetfromNumber(activeMonth+4)
-ClaimsActiveColumnIndex=getColumnAlphabetfromNumber(activeMonth+4)
-TSSActiveRowIndex=activeMonth+1
+NCActiveColumnIndex=getColumnAlphabetfromNumber(reportMonth+4)
+ClaimsActiveColumnIndex=getColumnAlphabetfromNumber(reportMonth+4)
+TSSActiveRowIndex=reportMonth+1
 
 
-team_report:dict[str,dict[str,tuple]] = {
+reportsAndTeamsDict:dict[
+                        str,dict
+                                [str,tuple
+                                        [dict,dict]
+                                ]
+                        ] = {
     "LT & Orders": 
     {
         WIT['abbrevation']:(WIT, {'Sheet1':[f'C{LTActiveRowIndex}']}),
@@ -85,5 +91,16 @@ team_report:dict[str,dict[str,tuple]] = {
 
     }
 }
+# changing the order of column requires update on here, on CheckUnfilledTeams.KPIreportVerifier.logToDatabase
+columnsAndDataTypes:dict[str,str]={"id" :"INTEGER PRIMARY KEY",
+                                "reportMonth": "TEXT"
+                               ,"reportWeek":"TEXT"
+                               ,"isEveryoneFilled":"TEXT"
+                                ,"unfilledTeams":"TEXT"
+                                ,"isReportGenerated":"TEXT"
+                                ,"reportCheckedTime":"TEXT"
+                                ,"iterationsRan":"INTEGER"}
 
-reports=list(team_report.keys())
+reports=list(reportsAndTeamsDict.keys())
+workingFolder:str=os.path.dirname(os.path.abspath(sys.argv[0]))
+logFilePath:str=fr"{workingFolder}\log\log.db"

@@ -11,10 +11,12 @@ def linkCreator(PyPDF2WriterObject:PdfWriter, linkLocationPage:int, linkBoxSize:
     annotation = AnnotationBuilder.link(rect=linkBoxSize, target_page_index=gotoPage, fit=Fit("/Fit"))
     PyPDF2WriterObject.add_annotation(page_number=linkLocationPage, annotation=annotation)
 
-def copyPasteLinksofPDF(sourcePDF:str,destinationPDF:str):
+def copyPasteLinksofPDF(sourcePDF:str,destinationPDF:str)->bool:
     if not (os.path.exists(sourcePDF) and os.path.exists(destinationPDF)):
-        print(f"Error: {sourcePDF} or {destinationPDF} does not exist.")
-        return
+        print(f"The PDF is not found"
+                  f"source PDF exists ? : {os.path.exists(sourcePDF)}"
+                  f"Destination PDF exists ?: {os.path.exists(destinationPDF)}")
+        return False
     pageNumber = 1
     reader = PdfReader(sourcePDF)
     reader2 = PdfReader(destinationPDF)
@@ -45,6 +47,8 @@ def copyPasteLinksofPDF(sourcePDF:str,destinationPDF:str):
             pageNumber+=1
     with open(destinationPDF, "wb") as fp:
         writer.write(fp)
+    print("PDF links copied successfully.")
+    return True
 
 if __name__=="__main__": # for passing argument in powershell
     """import argparse

@@ -3,6 +3,7 @@ from PySide6.QtCore import QPropertyAnimation, QPoint,QSize,QObject
 from PySide6.QtGui import QIcon,QPixmap,Qt,QImage
 import os
 import openpyxl
+import sys
 
 class mainApp(QWidget):
     
@@ -113,5 +114,24 @@ def CSSstyledWidget():
     window.show()
     app.exec()
 
+def createSystemTrayIcon():
+    from PySide6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
+    from PySide6.QtGui import QIcon,QAction
+
+    app = QApplication(sys.argv)
+    # Create a system tray icon
+    icon = QSystemTrayIcon(parent=app,icon=QIcon(r"Icons\ItalyFlag.jpeg"))
+    # Create a menu for the system tray icon
+
+
+    # Set the menu for the system tray icon
+    
+
+    # Show the system tray icon
+    icon.show()
+    app.setQuitOnLastWindowClosed(False)
+    sys.exit(app.exec())
+
 if __name__ == "__main__":
-    CSSstyledWidget()
+    createSystemTrayIcon()
+
