@@ -1,9 +1,6 @@
 from PyPDF2 import PdfReader, PdfWriter
 from PyPDF2.generic import AnnotationBuilder,Fit
 import os
-from tkinter.filedialog import askopenfilename
-from tkinter import messagebox
-import sys
 
 def linkCreator(PyPDF2WriterObject:PdfWriter, linkLocationPage:int, linkBoxSize:tuple, gotoPage:int):
     linkLocationPage = linkLocationPage - 1  # zero-indexed page
@@ -32,12 +29,6 @@ def copyPasteLinksofPDF(sourcePDF:str,destinationPDF:str)->bool:
                 subtype = annot.get_object()["/Subtype"]
                 if subtype == "/Link":
                     rectangleDimensions.append(obj["/Rect"])
-                    #obj2 = obj.get_object()["/A"] #3 lines for digging and getting id of an dictionary variable lies beneath page object
-                    #obj3 = obj2.get_object()["/D"]#the destination page changes when target page of link changes with diff of 28
-                    #obj4 = obj3.get_object()[0]#page index starts from 0 so -28-1=29 -1 done in above command
-                    # this method not working if pages go above 9
-                    # Accessing the destination page number
-                    #destination_page = obj4.idnum
 
             rectangleDimensions.sort()
             for destination_page,dimension in enumerate(rectangleDimensions):

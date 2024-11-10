@@ -13,12 +13,12 @@ import openpyxl.worksheet.worksheet
 
 from copyPasteLinksOfPDF import copyPasteLinksofPDF
 from LogData import Database
-from teamDatas import columnsAndDataTypes,logFilePath,reportMonth,reportWeek
+from applicationData import columnsAndDataTypes,logFilePath,reportMonth,reportWeek
 
 
 supportedExcelExtensions=[".xlsx",".xlsm",".xltx",".xltm"]
 
-
+#reportVerifier class contains information about report, methods to check and generate reports
 class KPIreportVerifier:
     def __init__(self,reportName:str,checkingFrequency:str="",reportPDFLocation:str=""
                  ,reportTemplatePDFLocation:str=""):
@@ -42,6 +42,8 @@ class KPIreportVerifier:
         
         self.getReportGeneratedStatus()
 
+    #If external data refresh is required win32.com used to open file in excel and refresh all queries and external data
+    #leaves the report file unmodified when checking report by creating a temporary file 
     def refreshAndSaveInTempPath(self):
         if self.tempReportPath and os.path.exists(self.tempReportPath):
             try:
@@ -65,11 +67,12 @@ class KPIreportVerifier:
             workbook=  None
             excel = None
         
-
+    #adds team after creating the class 
     def add_team(self, team_data,responsibleData:dict[str,list[str]]):
         self.teams.append(team_data)
         self.responsibleData[team_data]=responsibleData
 
+    #can be used to get cells need to be filled if existing team is passed
     def getResponsibleData(self,team_data):
         return self.responsibleData[team_data]
     
@@ -79,6 +82,7 @@ class KPIreportVerifier:
     def getResponsibleCells(self, team_data):
         return self.responsibleData[team_data]
 
+    #report checking procedure
     def get_teams_with_unfilled_cells(self):
         self.unfilled_teams:list[str]=[]
         print(f"Currently checking {self.reportName}")
@@ -89,6 +93,7 @@ class KPIreportVerifier:
         if os.path.exists(self.report_location):
             self.isExcelPathPresent = any(self.report_location.endswith(ext) for ext in supportedExcelExtensions)
 
+        # if any occurs when generating report all teams stored in the object is returned
         if not (self.isTeamAreDefined and self.isResponsibleDataPresent and self.isExcelPathPresent ):
             print(f"    Error While checking team\n"
                   f"    TeamsDeclared:{self.isTeamAreDefined}\n"
@@ -130,9 +135,11 @@ class KPIreportVerifier:
             self.tempReportPath=""
         return list(set(self.unfilled_teams))
     
+    #gets isreportgenerated and recheck iterations ran from database for current week or month and stores in the object
     def getReportGeneratedStatus(self)->bool:
         column=list(columnsAndDataTypes.keys())
         logDatabase=Database(dataBasePath=fr"{logFilePath}",TableName=self.reportName,columnsAndDataTypes=columnsAndDataTypes)
+        #query to pull latest month and week data of the specific report from the data base 
         logDatabase.cursor.execute(f"""SELECT * FROM '{self.reportName}' 
                                    WHERE {column[1]} = ? AND
                                         {column[2]} = ?
@@ -147,10 +154,10 @@ class KPIreportVerifier:
             self.isReportGenerated:bool=False
             self.checkingIterationsRan=0
             
-
         logDatabase.disconnect(saveChanges=True)
         return self.isReportGenerated
-    
+    #Logs necessary information to database for future use
+    #Takes log when get_teams_with_unfilled_cells runned successfully without errors
     def logToDatabase(self):  
         logData:dict={}
         column=list(columnsAndDataTypes.keys()) 
@@ -160,7 +167,7 @@ class KPIreportVerifier:
         logData[column[4]]=str(self.unfilled_teams)
         logData[column[5]]=str(self.isReportGenerated)
         logData[column[6]]=str(datetime.now())
-        
+        #checking for iterations ran data if not found taking 1, if found taking from database and incrementing by 1
         logDatabase=Database(dataBasePath=fr"{logFilePath}",TableName=self.reportName,columnsAndDataTypes=columnsAndDataTypes)
         logDatabase.cursor.execute(f"""SELECT * FROM '{self.reportName}' 
                                    WHERE {column[1]} = ? AND
@@ -176,6 +183,8 @@ class KPIreportVerifier:
         logDatabase.insertData(data=logData,saveChanges=True)
         logDatabase.disconnect(saveChanges=True)
 
+    #default generate report procedure runs a macro,copy internal links from template to generated pdf
+    #mark report generation status in the database
     def generateReport(self) -> None:        
         if self.isEveryoneFilled==False:
             print("Report completion check failed")
@@ -190,7 +199,8 @@ class KPIreportVerifier:
         else:
             self.isReportGenerated=False
         self.markReportGenerationStatus()
-        
+    
+    #update the current iteration data if report generation is completed
     def markReportGenerationStatus(self):
         column=list(columnsAndDataTypes.keys())
         logDatabase=Database(dataBasePath=fr"{logFilePath}",TableName=self.reportName,columnsAndDataTypes=columnsAndDataTypes)
@@ -209,6 +219,8 @@ class KPIreportVerifier:
 
         logDatabase.disconnect(saveChanges=True)
 
+
+#not used
 def readExcelCell(excelFilePath: str, sheetName: str, cellAddress: str):
     if not os.path.exists(excelFilePath):
         print("Excel file not found")
@@ -231,7 +243,7 @@ def readExcelCell(excelFilePath: str, sheetName: str, cellAddress: str):
         workbook = None
     return cell_value
 
-        
+#runs a macro using win32com returns true if macro ran successfully
 def runExcelMacro(excelFilePath:str,modulename:str,macroName:str)-> bool:
         if os.path.exists(excelFilePath)==False:
             print("Excel file not found")

@@ -1,17 +1,36 @@
 from datetime import datetime
-import os,sys
+import os,sys,json
+#all individual team related data is stored as key and value pair
+WIT:dict[str,str] = {"teamName":"Wittur Italy","icon":"Icons\\ItalyFlag.ico", "teamLeader":"John","abbrevation":"WIT"}
+WES:dict[str,str] = {"teamName":"Wittur Spain","icon":"Icons\\SpainFlag.ico", "teamLeader":"Bill","abbrevation":"WES Doors"}
+WHU:dict[str,str] = {"teamName":"Wittur Hungary","icon":"Icons\\HungaryFlag.ico", "teamLeader":"Arpad","abbrevation":"WHU"}
+SSC:dict[str,str] = {"teamName":"Shared Service Center","icon":"Icons\\IndiaFlag.ico", "teamLeader":"Lance","abbrevation":"SSC"}
+WAT:dict[str,str] = {"teamName":"Wittur Austria","icon":"Icons\\AustriaFlag.ico", "teamLeader":"Dan","abbrevation":"WAT Slings"}
+WAR:dict[str,str] = {"teamName":"Wittur Argentina","icon":"Icons\\ArgentinaFlag.ico", "teamLeader":"Dave","abbrevation":"WAR"}
 
-WIT:dict[str,str] = {"teamName":"Wittur Italy","icon":"Icons\\ItalyFlag.jpeg", "teamLeader":"John","abbrevation":"WIT"}
-WES:dict[str,str] = {"teamName":"Wittur Spain","icon":"Icons\\SpainFlag.png", "teamLeader":"Bill","abbrevation":"WES Doors"}
-WHU:dict[str,str] = {"teamName":"Wittur Hungary","icon":"Icons\\HungaryFlag.jpg", "teamLeader":"Arpad","abbrevation":"WHU"}
-SSC:dict[str,str] = {"teamName":"Shared Service Center","icon":"Icons\\IndiaFlag.png", "teamLeader":"Lance","abbrevation":"SSC"}
-WAT:dict[str,str] = {"teamName":"Wittur Austria","icon":"Icons\\AustriaFlag.png", "teamLeader":"Dan","abbrevation":"WAT Slings"}
-WAR:dict[str,str] = {"teamName":"Wittur Argentina","icon":"Icons\\ArgentinaFlag.jpg", "teamLeader":"Dave","abbrevation":"WAR"}
+#some of application settings
+appName="KPI reviewer"
+appIcon=r"Icons\appIcon.ico"
+settingsIcon=r"Icons\settings.ico"
+quitIcon=r"Icons\quit.ico"
 
+mainWindowWidth = 750
+mainWindowHeight = 750
+settingsFilePath=fr"{os.path.expanduser("~")}\Documents\{appName}"
+settingsfileName="settings.json"
+
+#Loading save file stored locally in documents if found 
+if os.path.exists(fr"{settingsFilePath}\{settingsfileName}"):
+    with open(fr"{settingsFilePath}\{settingsfileName}", 'r') as file:
+        settingsSaveFile=json.load(file)
+else:
+    settingsSaveFile={}
+
+#week and month in integer 
 reportWeek:int = datetime.now().isocalendar()[1]
 reportMonth:int = datetime.now().month-1
 
-
+#relative position of cell row or column varies based on reports and (month or week)
 LTActiveRowIndex=reportWeek+1
 OTDActiveRowIndex=reportWeek+1
 def getColumnAlphabetfromNumber(column_number:int)->str:
@@ -28,6 +47,8 @@ ClaimsActiveColumnIndex=getColumnAlphabetfromNumber(reportMonth+4)
 TSSActiveRowIndex=reportMonth+1
 
 
+#The main data of nested dictionary combinning reports and teams with their responsible cells of the active week or month
+#UI objects and reportVerifier object are created with this data
 reportsAndTeamsDict:dict[
                         str,dict
                                 [str,tuple
@@ -91,6 +112,7 @@ reportsAndTeamsDict:dict[
 
     }
 }
+#columns and datatype stored in database for auto generate report purposes
 # changing the order of column requires update on here, on CheckUnfilledTeams.KPIreportVerifier.logToDatabase
 columnsAndDataTypes:dict[str,str]={"id" :"INTEGER PRIMARY KEY",
                                 "reportMonth": "TEXT"
@@ -103,4 +125,5 @@ columnsAndDataTypes:dict[str,str]={"id" :"INTEGER PRIMARY KEY",
 
 reports=list(reportsAndTeamsDict.keys())
 workingFolder:str=os.path.dirname(os.path.abspath(sys.argv[0]))
+#Database is stored where the program is located
 logFilePath:str=fr"{workingFolder}\log\log.db"

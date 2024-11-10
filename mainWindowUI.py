@@ -1,135 +1,163 @@
-from PySide6.QtWidgets import (QMainWindow,QWidget,QPushButton,QStatusBar,QLabel,QLineEdit
-                               ,QGridLayout,QHBoxLayout,QSizePolicy,QSystemTrayIcon,
-                               QFileDialog,QCheckBox,QScrollArea,QMessageBox)
-from PySide6.QtGui import QCloseEvent, QIcon
-from PySide6.QtCore import QSize,Qt,QTimer,SignalInstance
+from PySide6.QtWidgets import (QMainWindow,QWidget,QPushButton,QVBoxLayout,QStatusBar,QLabel,QLineEdit
+                               ,QGridLayout,QHBoxLayout,QSizePolicy,QDoubleSpinBox,QTimeEdit,
+                               QFileDialog,QCheckBox,QScrollArea,QMessageBox,QComboBox)
+from PySide6.QtGui import  QIcon
+from PySide6.QtCore import QSize,Qt,QTimer,QTime,Signal
 from CheckUnfilledTeams import KPIreportVerifier,supportedExcelExtensions,runExcelMacro
 import json
 from datetime import datetime
-import time
 import os
-from teamDatas import (reportsAndTeamsDict,reports,reportMonth,
-                       reportWeek,columnsAndDataTypes,logFilePath)
-from LogData import Database
+
+from applicationData import (reportsAndTeamsDict,reports,reportMonth,settingsSaveFile,settingsfileName,settingsFilePath,
+                       reportWeek,settingsIcon,appName,appIcon,mainWindowHeight,
+                       mainWindowWidth)
 import calendar
 from copyPasteLinksOfPDF import copyPasteLinksofPDF
 import types
 
 
-
-appName="KPI reviewer"
-
-mainWindowWidth = 750
-mainWindowHeight = 750
-settingsFilePath=fr"{os.path.expanduser("~")}\Documents\{appName}"
-settingsfileName="settings.json"
-
-if os.path.exists(fr"{settingsFilePath}\{settingsfileName}"):
-    with open(fr"{settingsFilePath}\{settingsfileName}", 'r') as file:
-        settingsSaveFile=json.load(file)
-else:
-    settingsSaveFile={}
-
+# Settings window
 class settingsWidget(QWidget):
+    settingsSavedSignal:Signal=Signal()
     def __init__(self) -> None:
         super().__init__()
-        self.settingsObjectRowsCount=0
         self.setWindowTitle("Settings")
-        self.resize(1200, 1200)
-        self.saveFileKeys=[]
+        self.setWindowIcon(QIcon(settingsIcon))
+        self.resize(600, 600)
+        
         self.reportPathHeading=QLabel("Report Excel Paths")
         self.settingsLayout=QGridLayout()
-        self.settingsLayout.addWidget(self.reportPathHeading,self.settingsObjectRowsCount,1)
+        self.setWindowIcon(QIcon(settingsIcon))
+
+        #creating save file keys from report names
+        self.pathSaveFileKeys=[]
         for report in reports:
-            self.saveFileKeys.append(f"{report}_Excel_Path")
-            self.saveFileKeys.append(f"{report}_Template_PDF_Location")
+            self.pathSaveFileKeys.append(f"{report}_Excel_Path")
+            self.pathSaveFileKeys.append(f"{report}_Template_PDF_Location")
 
-        for ExcelFilePathKeys in self.saveFileKeys:
+        #settings for auto report generation
+        checkingFrequencyLabelsLayout=QGridLayout()
+        checkingFrequencyLabelsLayout=self.createCheckingFrequencyLabelsLayout()
+        
+        #adding file paths to layout
+        excelPathLabelsLayout=QVBoxLayout()
+        excelPathLabelsLayout.addWidget(self.reportPathHeading)
+        for ExcelFilePathKeys in self.pathSaveFileKeys:
             if "_Excel_Path" in ExcelFilePathKeys:
-                self.settingsLayout.addLayout(self.createLabelTextPair(f"{ExcelFilePathKeys}"),self.settingsObjectRowsCount,1)
+                excelPathLabelsLayout.addLayout(self.createLabelTextPair(f"{ExcelFilePathKeys}"))
                 
-        self.settingsObjectRowsCount+=1
         self.templatePDFLocationHeading=QLabel("Template PDF Locations")
-        self.autoGenerateReport=QCheckBox("Auto generate report")
-        self.autoGenerateReport.setChecked(settingsSaveFile.get("Auto_generate_report", False))
-
-        
-        tempLayout=QHBoxLayout()
-        tempLayout.addWidget(self.templatePDFLocationHeading)
-        tempLayout.addWidget(self.autoGenerateReport)
-        self.settingsLayout.addLayout(tempLayout, self.settingsObjectRowsCount, 1)
-        tempLayout=None
-
-        for TemplatePDFLocationKeys in self.saveFileKeys:
+        templatePdfLabelsLayout=QVBoxLayout()
+        templatePdfLabelsLayout.addWidget(self.templatePDFLocationHeading)
+        for TemplatePDFLocationKeys in self.pathSaveFileKeys:
             if "_Template_PDF_Location" in TemplatePDFLocationKeys:
-                self.settingsLayout.addLayout(self.createLabelTextPair(f"{TemplatePDFLocationKeys}"),self.settingsObjectRowsCount,1)
-        
+                templatePdfLabelsLayout.addLayout(self.createLabelTextPair(f"{TemplatePDFLocationKeys}"))
+
+        #combining all different layouts
+        self.settingsLayout.addLayout(checkingFrequencyLabelsLayout, 1, 1)
+        self.settingsLayout.addLayout(excelPathLabelsLayout, 2, 1)
+        self.settingsLayout.addLayout(templatePdfLabelsLayout, 3, 1)
+
+        #creating dummy qwidget object and replacing with scrollbar enabled widget
+        self.scrollBar=QScrollArea()
+        tempWidget=QWidget()
+        tempWidget.setLayout(self.settingsLayout)
+        self.scrollBar.setWidgetResizable(True)
+        self.scrollBar.setWidget(tempWidget)
+
+        #Save button not included in scroll area
         self.saveButton=QPushButton("Save")
-        self.settingsObjectRowsCount+=1
-        self.settingsLayout.addWidget(self.saveButton,self.settingsObjectRowsCount,1)
-        self.setLayout(self.settingsLayout)
+
+        #adding all layout and widget to main widget
+        self.mainLayout=QGridLayout()
+        self.mainLayout.addWidget(self.scrollBar)
+        self.mainLayout.addWidget(self.saveButton)
+        self.setLayout(self.mainLayout)
+
         self.saveButton.clicked.connect(self.saveSettingsAction)
         self.verifyDirectories()
 
-        self.scrollBar=QScrollArea()
-        self.scrollBar.setWidgetResizable(True)
-        self.scrollBar.setWidget(self)
-
-        
-
-
-            
+       
     def createLabelTextPair(self,pairName:str)->QGridLayout:
-        self.tempLayout=QGridLayout()
-        self.label=QLabel(pairName.replace("_", " "))
-        self.pathTextBox=QLineEdit()
-        self.pathTextBox.setStyleSheet("border: 1px solid black;")
-        self.pathTextBox.setObjectName(f"pathTextBox_{pairName}")
-        self.pathTextBox.setText(settingsSaveFile.get(pairName,"Browse file location"))#loading save file and saving to textbox here
-        self.button=QPushButton("Browse")
-        self.button.setObjectName(f"{pairName}")
-        self.button.clicked.connect(self.browseButtonAction)
-        self.backgroundLabel=QLabel()
-        self.backgroundLabel.setObjectName(f"backgroundLabel_{pairName}")
-        self.backgroundLabel.setStyleSheet("background-color: rgba(255, 0, 0, 50);"
+        """creating label text box and a button in a horizontal direction with background label"""
+
+        tempLayout=QGridLayout()
+        label=QLabel(pairName.replace("_", " "))
+        pathTextBox=QLineEdit()
+        pathTextBox.setStyleSheet("border: 1px solid black;")
+        #setting object name to find it later
+        pathTextBox.setObjectName(f"pathTextBox_{pairName}")
+        pathTextBox.setText(settingsSaveFile.get(pairName,"Browse file location"))#loading save file and saving to textbox here
+        button=QPushButton("Browse")
+        button.setObjectName(f"{pairName}")
+        button.clicked.connect(self.browseButtonAction)
+        backgroundLabel=QLabel()
+        backgroundLabel.setObjectName(f"backgroundLabel_{pairName}")
+        backgroundLabel.setStyleSheet("background-color: rgba(255, 0, 0, 50);"
                            "border: 1px solid black;")
         
-        self.tempLayout.addWidget(self.backgroundLabel, 1, 1, 2, 3)
-        self.tempLayout.addWidget(self.label,1,1,2,1)
-        self.tempLayout.addWidget(self.pathTextBox,1,2,2,1)
-        self.tempLayout.addWidget(self.button,1,3,2,1)
-        self.settingsObjectRowsCount+=1
-        return self.tempLayout
-    def saveSettingsAction(self):
+        tempLayout.addWidget(backgroundLabel, 1, 1, 2, 3)
+        tempLayout.addWidget(label,1,1,2,1)
+        tempLayout.addWidget(pathTextBox,1,2,2,1)
+        tempLayout.addWidget(button,1,3,2,1)
         
+        return tempLayout
+    def saveSettingsAction(self):
+        """saving all settings to a json file when save button clicked"""
+
+        #creating save file if not exists
         os.makedirs(name=settingsFilePath, exist_ok=True)
         print(fr"{settingsFilePath}\{settingsfileName}")
-        for reportKey in self.saveFileKeys:
+
+        #taking all line edit values with object name and updating it settingsSaveFile dictionary
+        for reportKey in self.pathSaveFileKeys:
             tempLineEdit=self.findChild(QLineEdit, f"pathTextBox_{reportKey}")
             if isinstance(tempLineEdit, QLineEdit):
                 settingsSaveFile[reportKey]=tempLineEdit.text()
+        
+        #taking some other qobjects value and updating settingsSaveFile dictionary
+        settingsSaveFile["Auto_check_report"]=self.autoCheckReport.isChecked()
         settingsSaveFile["Auto_generate_report"]=self.autoGenerateReport.isChecked()
+        settingsSaveFile["Report_Trigger_Time"]=self.timeToTriggerReport.time().toString("hh:mm")
+        settingsSaveFile["Report_Trigger_Day"]=self.dayOfWeekComboBox.currentText()
+        settingsSaveFile["Weekly_Rechecking_Frequency"]=self.weeklyFrequencySpinBox.value()
+        settingsSaveFile["Monthly_Rechecking_Frequency"]=self.monthlyFrequencySpinBox.value()
+
+        #saving it as a JSON file
         with open(fr"{settingsFilePath}\{settingsfileName}", 'w') as file:
             json.dump(settingsSaveFile, file)
-        
+        #changing background label color 
         self.verifyDirectories()
 
+        # emitting signal that settingsSaveFile dictionary has been updated
+        self.settingsSavedSignal.emit()
+
     def browseButtonAction(self):
-        self.button=self.sender()
-        if isinstance(self.button, QPushButton):
-            self.key=self.button.objectName()
-        pathValue=QFileDialog.getOpenFileName(caption=f"{self.key}")
-        self.tempPathTextBox=self.findChild(QLineEdit,f"pathTextBox_{self.key}")
-        if isinstance(self.tempPathTextBox,QLineEdit) and not(pathValue[0]==""):
-            self.tempPathTextBox.setText(pathValue[0])
+        """opens a file browser """
+        #finding which browse button was clicked
+        button=self.sender()
+        if isinstance(button, QPushButton):
+            key=button.objectName()
+
+        #extracting path from selected file from File browser UI
+        pathValue=QFileDialog.getOpenFileName(caption=f"{key}")
+
+        #searching for lineedit of the button and updating its current value to the path
+        tempPathTextBox=self.findChild(QLineEdit,f"pathTextBox_{key}")
+        if isinstance(tempPathTextBox,QLineEdit) and not(pathValue[0]==""):
+            tempPathTextBox.setText(pathValue[0])
 
         ...
     def verifyDirectories(self):
-        for number,report in enumerate(self.saveFileKeys):
-            activePath:str=settingsSaveFile.get(f"{report}","")
+        """changes background label color """
+
+        #looping through all keys of line edit objects extracting its value checking and updating color of background label
+        for report in self.pathSaveFileKeys:
+            activePath:str=settingsSaveFile.get(report,"")
+            
             isDirectoryPresent=os.path.exists(activePath)
-            isSupportedExtension = any(activePath.endswith(ext) for ext in supportedExcelExtensions)
-            if isDirectoryPresent is True: #and isSupportedExtension is True:
+            isSupportedExtension = any(activePath.endswith(ext) for ext in supportedExcelExtensions) or activePath.endswith("pdf")
+            if isDirectoryPresent is True and isSupportedExtension is True:
                 label=self.findChild(QLabel, f"backgroundLabel_{report}")
                 if isinstance(label, QLabel):
                     label.setStyleSheet("background-color: rgba(0, 255, 0, 50);"
@@ -139,19 +167,69 @@ class settingsWidget(QWidget):
                 if isinstance(label, QLabel):
                     label.setStyleSheet("background-color: rgba(255, 0, 0, 50);"
                                         "border: 1px solid black;")
-                
+                    
 
-class individualReportLayout():
+    def createCheckingFrequencyLabelsLayout(self)->QGridLayout:
         
+        """Creating Qobjects of checking frequency and aligning them in a layout"""
+        autoGenerateLabelsLayout=QGridLayout()
+        self.autoGenerateReport=QCheckBox("Auto generate report")
+        self.autoCheckReport=QCheckBox("Auto check report")
+        self.autoCheckReport.setChecked(settingsSaveFile.get("Auto_check_report", False))
+
+        self.autoGenerateReport.setChecked(settingsSaveFile.get("Auto_generate_report", False))
+
+        checkingFrequencyLabel=QLabel("Rechecking  Frequency")
+        reportTriggerTimeLabel=QLabel("Report Trigger Time")
+        self.dayOfWeekComboBox=QComboBox()
+        self.dayOfWeekComboBox.addItems(["Sunday","Monday", "Tuesday", "Wednesday", "Thursday", "Friday","Saturday"])
+        self.dayOfWeekComboBox.setCurrentText(settingsSaveFile.get("Report_Trigger_Day", "Monday"))
+        self.timeToTriggerReport=QTimeEdit()
+        self.timeToTriggerReport.setDisplayFormat("hh:mm")
+        self.timeToTriggerReport.setTime(QTime.fromString(
+                                                            settingsSaveFile.get("Report_Trigger_Time", 
+                                                                                str(QTime.currentTime())
+                                                                                                 ),"hh:mm"))
+        reportTriggerDescriptionLabel=QLabel("Specify the week day and time to trigger the first check")
+        weeklyReportLabel=QLabel("Weekly")
+        monthlyReportLabel=QLabel("Monthly")
+
+        self.weeklyFrequencySpinBox=QDoubleSpinBox()
+        #self.weeklyFrequencySpinBox.setRange(0.5,9)
+        self.weeklyFrequencySpinBox.setSingleStep(0.5)
+        self.weeklyFrequencySpinBox.setValue(settingsSaveFile.get("Weekly_Rechecking_Frequency", 1))
+
+        self.monthlyFrequencySpinBox=QDoubleSpinBox()
+        #self.monthlyFrequencySpinBox.setRange(0.5,9)
+        self.monthlyFrequencySpinBox.setSingleStep(0.5)
+        self.monthlyFrequencySpinBox.setValue(settingsSaveFile.get("Monthly_Rechecking_Frequency", 2))
+        checkingFrequencyDescription=QLabel("Specify how much hours to wait before start recheck if report is not completed")
+
+        autoGenerateLabelsLayout.addWidget(self.autoCheckReport, 1, 1, 1, 2)
+        autoGenerateLabelsLayout.addWidget(self.autoGenerateReport, 1, 2, 1, 2)
+        autoGenerateLabelsLayout.addWidget(reportTriggerTimeLabel, 2, 1, 1, 4)
+        autoGenerateLabelsLayout.addWidget(self.dayOfWeekComboBox, 2, 2, 1, 1)
+        autoGenerateLabelsLayout.addWidget(self.timeToTriggerReport, 2, 3, 1, 1)
+        autoGenerateLabelsLayout.addWidget(reportTriggerDescriptionLabel, 3, 1, 1, 4)
+        autoGenerateLabelsLayout.addWidget(checkingFrequencyLabel, 4, 1, 1, 4)
+        autoGenerateLabelsLayout.addWidget(weeklyReportLabel, 5, 1, 1, 1)
+        autoGenerateLabelsLayout.addWidget(self.weeklyFrequencySpinBox, 5, 2, 1, 1)
+        autoGenerateLabelsLayout.addWidget(monthlyReportLabel, 5, 3, 1, 1)
+        autoGenerateLabelsLayout.addWidget(self.monthlyFrequencySpinBox, 5, 4, 1, 1)
+        autoGenerateLabelsLayout.addWidget(checkingFrequencyDescription, 7, 1, 1, 4)
+        return autoGenerateLabelsLayout
+    
+class individualReportLayout():
+    """This class creates single report UI objects with Teams """    
     def __init__(self,reportName) -> None:
 
-        flagButtonHeight=25
-        flagButtonWidth=50
+        #creating objects and setting object name for later identification
         self.layoutTitle=QLabel(reportName)
         self.reportName=reportName
         self.layoutTitle.setStyleSheet("background-color: rgba(255, 255, 255, 0);")
+        
         self.refreshButton=createButton(buttonWidth=50,buttonHeight=25,
-                        imagePath=r"Icons\RefreshIcon.jpg",toolTip="Refresh")
+                        imagePath=r"Icons\RefreshIcon.ico",toolTip="Refresh")
         self.refreshButton.setObjectName(f"{self.reportName}_RefreshButton")
         self.refreshButton.setStyleSheet("background-color: rgba(255, 255, 255, 0);")
         self.buttonsList:list[QPushButton]=[]
@@ -167,6 +245,7 @@ class individualReportLayout():
         self.reportBackgroundLabel=QLabel()
         self.reportBackgroundLabel.setAlignment(Qt.AlignmentFlag.AlignTop)
 
+        #UI objects are arranged here
         self.masterLayout=QGridLayout()
 
         self.Layout1=QGridLayout()
@@ -184,7 +263,7 @@ class individualReportLayout():
 
     def addButton(self,buttonWidth:int, buttonHeight:int,buttonName:str,positionX:int=0,positionY:int=0
                 ,imagePath:str="",toolTip:str="",Active:bool=True,buttonDescription:str="") -> None:
-        
+        """Adds a button with an image on it """
         self.button=QPushButton(buttonName)
         self.button.setGeometry(positionX, positionY, buttonWidth, buttonHeight)
         #to resize image with button size
@@ -198,10 +277,12 @@ class individualReportLayout():
         self.button.setToolTipDuration(2000)
         self.button.setEnabled(Active)
         self.buttonsList.append(self.button)
+        # after creating buttons arranging it in the layout
         self.setDefaultLayout()
 
 
     def setDefaultLayout(self) -> None:
+        """since team buttons is created dynamically layout is updated after adding buttons"""
         self.Layout1=QGridLayout()
         self.Layout1.addWidget(self.reportBackgroundLabel, 1, 1,3,len(self.buttonsList))
         self.Layout1.addWidget(self.layoutTitle, 1, 1,1,4)
@@ -215,39 +296,47 @@ class individualReportLayout():
         self.Layout1.addLayout(tempLayout, 3, 1, 1, len(self.buttonsList))
 
 
-
+    #to get report layout instance to combine it with other report layout outside this class
     def getLayout(self):
         return self.Layout1
 
-    def disableButton(self,button:QPushButton):
-        button.setEnabled(False)
 
 
 class KPIMainWindow(QMainWindow):
 
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("KPI Remainder")
+        self.setWindowTitle(appName)
+        self.setWindowIcon(QIcon(appIcon))
+        self.resize(mainWindowWidth,mainWindowHeight)
+
         self.createUI()
         self.loadUnfilledTeamsLogic()
-        self.resize(mainWindowWidth,mainWindowHeight)
         self.addHeaderObjects("KPI Updated status")
         self.alignObjects()
-        self.createStatusWindow()
-        self.settingsWindow=settingsWidget()
-        self.settingsButton.clicked.connect(lambda:self.settingsWindow.scrollBar.show())
-        self.messageBox=QMessageBox()
+        #self.createStatusWindow()
 
-        #self.refreshAllData()
+        #settings object is created here-----------------------------------------------------------------------------------
+        self.settingsWindow=settingsWidget()
+        self.settingsButton.clicked.connect(self.settingsWindow.show)
+
+        self.messageBox=QMessageBox()
+        if settingsSaveFile.get("Auto_check_report", False) :
+            self.refreshAllData()
 
 
     def createUI(self):
+        """Creating all UI for dashboard and storing it in dictionary"""
         self.reportsLayoutDict:dict[str,individualReportLayout]={}
+
+        #creating UI for all reports here
         for report in reports:
             self.reportsLayoutDict[report]=individualReportLayout(report)
 
         varButtonHeight=25
         varButtonWidth=50
+
+        #adding teams button from external data for each report
         for report,teamsInReport in reportsAndTeamsDict.items():
             for teamAbbrevation,teamDataTuple in teamsInReport.items():
                 teamData=teamDataTuple[0]
@@ -260,21 +349,25 @@ class KPIMainWindow(QMainWindow):
         for layout in self.reportsLayoutDict.values():
             for button in layout.buttonsList:
                 button.clicked.connect(self.flagButtonClickedAction)
+        #All refresh buttons of reports are connected to single function
+        #All generate buttons of reports are connected to single function
         for layoutObject in self.reportsLayoutDict.values():
-            layoutObject.refreshButton.clicked.connect( self.refreshButtonClickedAction)
+            layoutObject.refreshButton.clicked.connect(self.refreshButtonClickedAction)
             layoutObject.generateReportButton.clicked.connect(self.generateReportButtonClickedAction)
+
+        #used to trigger the first check procedure and not used as an UI
         self.startUnfilledRecheckProcedure=QPushButton()
         self.startUnfilledRecheckProcedure.clicked.connect(self.recheckProcedure)
 
     def loadUnfilledTeamsLogic(self):
-
-        self.reportList=list(settingsSaveFile.values())
+        """creating all report verifier objects and storing it in dictionary"""
         self.reportVerifierDict:dict[str,KPIreportVerifier]={}
-        #setting checking frequency here------------------------------------------------------------------------
+        #setting weekly or monthly here------------------------------------------------------------------------
         for report in reports:
             self.reportVerifierDict[report]=KPIreportVerifier(reportName=report,checkingFrequency="Monthly")
         self.reportVerifierDict["LT & Orders"].checkingFrequency="Weekly"
         
+        # if external data refresh required the excel is temporary copied, values refreshed, saved as temp file and used
         self.reportVerifierDict["LT & Orders"].isExternalDataRefreshRequired=True
         self.reportVerifierDict["Claims"].isExternalDataRefreshRequired=True
 
@@ -292,8 +385,11 @@ class KPIMainWindow(QMainWindow):
         self.reportVerifierDict["Technical Sales Support"].MacroModule="ThisWorkbook"
         self.reportVerifierDict["Technical Sales Support"].macroName="PrintToPDF"
 
+
+        # if generate report procedure is not similar to all reports then procedure can be manually written and connected to separate instance
         self.reportVerifierDict["LT & Orders"].generateReport=types.MethodType(LTGenerateReportOverride,self.reportVerifierDict["LT & Orders"])
 
+        #adding teams in reportverifier object
         for report,teamsInReport in reportsAndTeamsDict.items():
             for teamDataTuple in teamsInReport.values():
                 teamData=teamDataTuple[0]
@@ -301,13 +397,20 @@ class KPIMainWindow(QMainWindow):
                 teamData=None
 
     def refreshButtonClickedAction(self) -> None:
+        """Checks the report , prints the unfilled teams and updates some properties of the reportverirfier object"""
+
+        #Identifying which report's refresh button is clicked
         clickedRefreshButton=self.sender()
         isReportCheckedSuccessfully=False
         for reportKey,reportVerifier in self.reportVerifierDict.items():
+
+            #setting excel path file from settingsSaveFile here when refreshing
             if reportKey in clickedRefreshButton.objectName():
                 reportVerifier.report_location=settingsSaveFile.get(f"{reportKey}_Excel_Path","Key not found")
+                #calling the reportverifier method to check and update some properties
                 unfilledTeamsList=reportVerifier.get_teams_with_unfilled_cells()
                 isReportCheckedSuccessfully=reportVerifier.isSuccessfullyCheckedWithoutErrors
+                #updating the status of the UI of refreshed report
                 tempLabel=self.findChild(QLabel, f"{reportKey}_ActiveTime")
                 if reportVerifier.checkingFrequency=="Weekly" and isinstance(tempLabel,QLabel):
                     tempLabel.setText(f"Report Week: {reportWeek}")
@@ -315,6 +418,7 @@ class KPIMainWindow(QMainWindow):
                     tempLabel.setText(f"Report Month: {calendar.month_name[reportMonth]}")
                 tempLabel=None
                 break
+        #updating the status of the UI of refreshed report
         for teamButton in self.reportsLayoutDict[reportKey].buttonsList:
             teamButton.setStyleSheet("")
         if isReportCheckedSuccessfully==True and unfilledTeamsList!=[]:
@@ -347,11 +451,12 @@ class KPIMainWindow(QMainWindow):
         self.label=QLabel()
         self.label.setText(buttonText)
         self.settingsButton=createButton(buttonWidth=50,
-                        buttonHeight=50,imagePath=r"Icons\settings.png",toolTip="Settings")
+                        buttonHeight=50,imagePath=settingsIcon,toolTip="Settings")
         self.emptyLabel=QPushButton()
 
 
     def alignObjects(self) -> None:
+        """aligning all created ui objects and creating scroll bar"""
         masterLayout=QGridLayout()
         firstRow=QHBoxLayout()
         firstRow.addWidget(self.label,stretch=3)
@@ -360,14 +465,20 @@ class KPIMainWindow(QMainWindow):
         for counter,reportLayout in enumerate(self.reportsLayoutDict.values()):
             masterLayout.addLayout(reportLayout.getLayout(), counter+2, 1)
 
-        self.mainWidget=QWidget() 
-        self.mainWidget.setLayout(masterLayout)
+        tempWidget=QWidget()
+        tempWidget.setLayout(masterLayout)
         self.scrollBar=QScrollArea()
         self.scrollBar.setWidgetResizable(True)
-        self.scrollBar.setWidget(self.mainWidget)
-        self.setCentralWidget(self.scrollBar)
+        self.scrollBar.setWidget(tempWidget)
+        tempLayout=QGridLayout()
+        tempLayout.addWidget(self.scrollBar)
+        self.mainWidget=QWidget()
+        self.mainWidget.setLayout(tempLayout)
+        
+        self.setCentralWidget(self.mainWidget)
 
     def createStatusWindow(self) -> None:
+        """currently not used"""
         self.statusWindow=QStatusBar()
         self.setStatusBar(self.statusWindow)
         self.statusLabel=QLabel("Ready")
@@ -376,11 +487,14 @@ class KPIMainWindow(QMainWindow):
         self.setWindowTitle("DashBoard")
     
     def flagButtonClickedAction(self) -> None:
+        """currently not used"""
         temp=self.sender()
         if isinstance(temp, QPushButton):
             print(temp.objectName())
 
-    def generateReportButtonClickedAction(self,checkCompletion:bool=True):
+    def generateReportButtonClickedAction(self):
+        """Triggers the generate report procedure in the reportVerifier object"""
+        
         checkCompletion=True
         if isinstance(self.sender(),QPushButton):
             button=self.sender()
@@ -393,18 +507,20 @@ class KPIMainWindow(QMainWindow):
                 activeReportName=reportKey
                 activeReport=reportVerifier
                 break
-        if activeReport==None:
+        if activeReport is None:
             print("Report not generated, Couldn't find which report the clicked button belongs")
             return
-        if checkCompletion==False or activeReport.isEveryoneFilled==False:
+        #giving warning if report is not completed
+        if activeReport.isEveryoneFilled==False:
             msgbox=QMessageBox()
             msgbox.setText("Report Completion check failed do you want to generate anyways?")
             msgbox.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
             if msgbox.exec()==QMessageBox.StandardButton.Yes:
-                checkCompletion=True
+                checkCompletion=False
             else:
                 return
-        if checkCompletion==True:
+        # changing properties of reportVerifier object from settingsSaveFile and starting generate report procedure
+        if activeReport.isEveryoneFilled==True or checkCompletion==False:
             tempPath1:str=settingsSaveFile.get(f"{reportKey}_Excel_Path", "")
             tempPath1=tempPath1.replace(".xlsm",".pdf")
             tempPath2=settingsSaveFile.get(f"{reportKey}_Template_PDF_Location", "")
@@ -414,57 +530,93 @@ class KPIMainWindow(QMainWindow):
             activeReport.generateReport()
 
     def recheckProcedure(self) -> None:
-        print(f"Auto check initiated checking for month {calendar.month_name[reportMonth]} and week:{reportWeek} \n")
-        self.unFilledRecheckTimer:QTimer=QTimer(self)
-        self.unFilledRecheckTimer.timeout.connect(self.checkAndGenerateReport)
-        self.unFilledRecheckTimer.start(15000) #30 minutes = 1800000
-        self.checkAndGenerateReport()
+        """Used for auto triggering report checking and generating"""
+
+        #loading values from settingsSaveFile 
+        weeklyRecheckingFrequencyMS:int=settingsSaveFile.get("Weekly_Rechecking_Frequency", 1)*60*60*1000
+        if settingsSaveFile.get("Auto_check_report", False) :
+            print(f"Auto check initiated checking for month {calendar.month_name[reportMonth]} and week:{reportWeek} \n")
+
+            #using qtimer for rechecking triggers
+            self.unFilledRecheckTimer:QTimer=QTimer(self)
+            self.unFilledRecheckTimer.timeout.connect(self.autoCheckAndGenerateReport)
+            self.unFilledRecheckTimer.start(weeklyRecheckingFrequencyMS) 
+            self.autoCheckAndGenerateReport()
+        else:
+            print("Auto check not enabled")
         
 
-    def checkAndGenerateReport(self) -> None:
+    def autoCheckAndGenerateReport(self) -> None:
+            """checks the report creates a message box showing status, generates report if it is enabled"""
+            monthlyRecheckingFrequencyMS:int=settingsSaveFile.get("Monthly_Rechecking_Frequency", 3)*60*60*1000
             self.isRecheckRequired=True
-            message="\n"
+            message="_________________________________________________\n"
+            self.messageBox.setWindowTitle(f"Status for month {calendar.month_name[reportMonth]} and week:{reportWeek}")
+            self.messageBox.setIcon(QMessageBox.Icon.Information)
+            #collecting information about reports, generating only if report is completed and auto_generate_Report is enabled
             for reportKey,reportVerifier in self.reportVerifierDict.items():
                 if reportVerifier.isReportGenerated==False:
-                    
                     self.reportsLayoutDict[reportKey].refreshButton.click()
-                    if len(reportVerifier.unfilled_teams)==0:
+
+                    if len(reportVerifier.unfilled_teams)==0 and settingsSaveFile.get("Auto_generate_report", False)==True :
                         self.reportsLayoutDict[reportKey].generateReportButton.click()
-                        if reportVerifier.checkingFrequency=="Weekly":
-                            self.unFilledRecheckTimer.stop()
-                            self.unFilledRecheckTimer.start(30000)
-                            
+                        message=message+str(f"{reportKey} report generated \n")
+
+                    elif len(reportVerifier.unfilled_teams)==0 and settingsSaveFile.get("Auto_generate_report", False)==False:
+                        self.messageBox.setStandardButtons(QMessageBox.StandardButton.Ok)
+                        message=message+str(f"{reportKey} report completed \n")
+
                     else:
-                        self.messageBox.setWindowTitle(f"Status for month {calendar.month_name[reportMonth]} and week:{reportWeek}")
-                        self.messageBox.setIcon(QMessageBox.Icon.Information)
+
                         message=message+str(f"{reportKey} report not completed \n pending teams : {reportVerifier.unfilled_teams} \n "
-                                                    f"No of times rechecked : {reportVerifier.checkingIterationsRan}\n"
-                                                    "-------------------------------------------------------------\n")
-                        
-                        
+                                                    f"No of times rechecked : {reportVerifier.checkingIterationsRan}\n")
+                                                    
                 else:
                     self.messageBox.setStandardButtons(QMessageBox.StandardButton.Ok)
+                    message=message+str(f"{reportKey} report already generated \n")
                     print(f"{reportKey} report already generated")
+                message=message+"_________________________________________________\n"
             self.messageBox.setText(message)
+            #showing all the report stats to user for all triggers happening
             self.messageBox.show()
-            if any((reportVerifier.isReportGenerated==True and reportVerifier.checkingFrequency=="Weekly") for reportVerifier in self.reportVerifierDict.values()):
-                print ("All weekly reports generated")
+
+            #if all weekly report is completed recheck timer is changed to monthly
+            weeklyReportGenerationStatus=[]
+            for reportVerifier in self.reportVerifierDict.values():
+                if reportVerifier.checkingFrequency=="Weekly":
+                    weeklyReportGenerationStatus.append(reportVerifier.isReportGenerated)
+
+            if all(weeklyReportGenerationStatus):
+                print("All weekly reports generated")
                 self.unFilledRecheckTimer.stop()
-                self.unFilledRecheckTimer.start(45000)
+                self.unFilledRecheckTimer.start(monthlyRecheckingFrequencyMS)
             
             if all(reportVerifier.isReportGenerated==True for reportVerifier in self.reportVerifierDict.values()):
                 self.isRecheckRequired=False
 
+            #If all completed rechecking procedure is closed
             if self.isRecheckRequired==False:
+
                 print("Auto check completed report closing Timer")
                 self.unFilledRecheckTimer.stop()
+
+    def closeEvent(self, event):
+    # closing event to destroy timer and message box
+        if hasattr(self, 'unFilledRecheckTimer'):
+            self.unFilledRecheckTimer.stop()
+        if hasattr(self, 'messageBox'):
+            self.messageBox.close()
+        event.accept()
+
                 
 
 
 
 def createButton(buttonWidth:int, buttonHeight:int,positionX:int=0,positionY:int=0,buttonName:str=""
                 ,imagePath:str="",toolTip:str="",Active:bool=True)->QPushButton:
+    """creates button, sets some properties and returns it"""
     button=QPushButton(buttonName)
+    
     button.setGeometry(positionX, positionY, buttonWidth, buttonHeight)
     #to resize image with button size
     button.setIconSize(QSize(buttonWidth, buttonHeight))
