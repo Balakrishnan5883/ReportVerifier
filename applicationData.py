@@ -1,5 +1,6 @@
 from datetime import datetime
 import os,sys,json
+from typing import Union
 #all individual team related data is stored as key and value pair
 WIT:dict[str,str] = {"teamName":"Wittur Italy","icon":"Icons\\ItalyFlag.ico", "teamLeader":"John","abbrevation":"WIT"}
 WES:dict[str,str] = {"teamName":"Wittur Spain","icon":"Icons\\SpainFlag.ico", "teamLeader":"Bill","abbrevation":"WES Doors"}
@@ -32,7 +33,7 @@ reportMonth:int = datetime.now().month-1
 
 #relative position of cell row or column varies based on reports and (month or week)
 LTActiveRowIndex=reportWeek+1
-OTDActiveRowIndex=reportWeek+1
+OTDActiveRowIndex=reportMonth+1
 def getColumnAlphabetfromNumber(column_number:int)->str:
     result = ""
     while column_number > 0:
@@ -42,8 +43,8 @@ def getColumnAlphabetfromNumber(column_number:int)->str:
         column_number //= 26
     return result
 
-NCActiveColumnIndex=getColumnAlphabetfromNumber(reportMonth+4)
-ClaimsActiveColumnIndex=getColumnAlphabetfromNumber(reportMonth+4)
+NCActiveColumnIndex=getColumnAlphabetfromNumber(reportMonth+3)
+ClaimsActiveColumnIndex=getColumnAlphabetfromNumber(reportMonth+3)
 TSSActiveRowIndex=reportMonth+1
 
 
@@ -52,7 +53,8 @@ TSSActiveRowIndex=reportMonth+1
 reportsAndTeamsDict:dict[
                         str,dict
                                 [str,tuple
-                                        [dict,dict]
+                                        [dict[str,str],
+                                         dict[str,list[str]]]
                                 ]
                         ] = {
     "LT & Orders": 
@@ -69,8 +71,8 @@ reportsAndTeamsDict:dict[
     {
         WIT['abbrevation']:(WIT, {'Sheet1':[f'C{OTDActiveRowIndex}']}),
         WES['abbrevation']:(WES,{'Sheet1':[f'D{OTDActiveRowIndex}']}),
-        SSC['abbrevation']:(SSC,{'Sheet1':[f'H{OTDActiveRowIndex}']}),
-        WAR['abbrevation']:(WAR,{'Sheet1':[f'G{OTDActiveRowIndex}']}),    
+        SSC['abbrevation']:(SSC,{'Sheet1':[f'F{OTDActiveRowIndex}']}),
+        WAR['abbrevation']:(WAR,{'Sheet1':[f'E{OTDActiveRowIndex}']}),    
     },
     "Efficiency":
     {
@@ -114,14 +116,17 @@ reportsAndTeamsDict:dict[
 }
 #columns and datatype stored in database for auto generate report purposes
 # changing the order of column requires update on here, on CheckUnfilledTeams.KPIreportVerifier.logToDatabase
-columnsAndDataTypes:dict[str,str]={"id" :"INTEGER PRIMARY KEY",
+dataBaseColumnsAndDataTypes:dict[str,str]={"id" :"INTEGER PRIMARY KEY",
                                 "reportMonth": "TEXT"
                                ,"reportWeek":"TEXT"
                                ,"isEveryoneFilled":"TEXT"
                                 ,"unfilledTeams":"TEXT"
                                 ,"isReportGenerated":"TEXT"
                                 ,"reportCheckedTime":"TEXT"
-                                ,"iterationsRan":"INTEGER"}
+                                ,"iterationsRan":"INTEGER"
+                                ,"nextRecheckTime":"TEXT"}
+
+
 
 reports=list(reportsAndTeamsDict.keys())
 workingFolder:str=os.path.dirname(os.path.abspath(sys.argv[0]))

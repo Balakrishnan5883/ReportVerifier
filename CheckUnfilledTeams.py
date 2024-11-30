@@ -3,8 +3,9 @@ import os
 import win32com.client as win32
 from datetime import datetime
 import calendar
+import tempfile
 
-
+from PySide6.QtCore import QDateTime
 import openpyxl
 import openpyxl.cell
 import openpyxl.workbook
@@ -13,7 +14,7 @@ import openpyxl.worksheet.worksheet
 
 from copyPasteLinksOfPDF import copyPasteLinksofPDF
 from LogData import Database
-from applicationData import columnsAndDataTypes,logFilePath,reportMonth,reportWeek
+from applicationData import dataBaseColumnsAndDataTypes,logFilePath,reportMonth,reportWeek,settingsSaveFile
 
 
 supportedExcelExtensions=[".xlsx",".xlsm",".xltx",".xltm"]
@@ -32,6 +33,7 @@ class KPIreportVerifier:
         self.isReportGenerated=False
         self.isSuccessfullyCheckedWithoutErrors=False
         self.checkingFrequency=checkingFrequency
+        self.reportPDFName:str
         self.reportPDFLocation:str=reportPDFLocation
         self.reportTemplatePDFLocation:str=reportTemplatePDFLocation
         self.MacroModule:str
@@ -56,7 +58,7 @@ class KPIreportVerifier:
         workbook = excel.Workbooks.Open(Filename=self.report_location,UpdateLinks=True)
         excel.CalculateUntilAsyncQueriesDone()
         tempFileName = f"temp_{self.reportName}_{datetime.now().strftime('%d-%b-%y_%I-%M_%p')}.xlsm"
-        self.tempReportPath ="\\".join(self.report_location.split("/")[:-1])+"\\"+tempFileName
+        self.tempReportPath =tempfile.gettempdir()+"\\"+tempFileName
         try:
             workbook.SaveAs(Filename=self.tempReportPath, FileFormat=52)  
         except Exception as error:
@@ -137,50 +139,67 @@ class KPIreportVerifier:
     
     #gets isreportgenerated and recheck iterations ran from database for current week or month and stores in the object
     def getReportGeneratedStatus(self)->bool:
-        column=list(columnsAndDataTypes.keys())
-        logDatabase=Database(dataBasePath=fr"{logFilePath}",TableName=self.reportName,columnsAndDataTypes=columnsAndDataTypes)
-        #query to pull latest month and week data of the specific report from the data base 
-        logDatabase.cursor.execute(f"""SELECT * FROM '{self.reportName}' 
-                                   WHERE {column[1]} = ? AND
-                                        {column[2]} = ?
-                                    ORDER BY {column[7]} DESC
-                                    LIMIT 1""",(calendar.month_name[reportMonth],reportWeek))
-        row=logDatabase.cursor.fetchone()
-        if not(row==None or len(row)==0):
-            if row[5]=='True':
+        logDatabase=Database(dataBasePath=fr"{logFilePath}",TableName=self.reportName,columnsAndDataTypes=dataBaseColumnsAndDataTypes)
+        logDatabase.connection.commit()
+
+        latestRow=logDatabase.getLatestRow(tableName=self.reportName)
+
+        if latestRow==None or len(latestRow)==0:
+            print (f"No Data found in the database table {self.reportName}")
+            return False
+
+        if len(dataBaseColumnsAndDataTypes.keys())!=len(latestRow):
+            print("Database columns and application data doesn't match")
+            print(f"Database columns : {logDatabase.getColumns(tableName=self.reportName)}")
+            print(f"Application columns : {list(dataBaseColumnsAndDataTypes.keys())}")
+            return False
+        
+        if latestRow[1]==str(calendar.month_name[reportMonth]) and latestRow[2]==str(reportWeek):
+            if latestRow[5]=='True':
                 self.isReportGenerated:bool=True
-            self.checkingIterationsRan=int(row[7])
+            else:
+                self.isReportGenerated=False
+            self.checkingIterationsRan=int(latestRow[7])
         else:
             self.isReportGenerated:bool=False
             self.checkingIterationsRan=0
-            
-        logDatabase.disconnect(saveChanges=True)
+        logDatabase.disconnect(saveChanges=False)
         return self.isReportGenerated
+    
     #Logs necessary information to database for future use
     #Takes log when get_teams_with_unfilled_cells runned successfully without errors
     def logToDatabase(self):  
+        logDatabase=Database(dataBasePath=fr"{logFilePath}")
         logData:dict={}
-        column=list(columnsAndDataTypes.keys()) 
+        if not len(self.unfilled_teams)==0:
+            currentTime=QDateTime().currentDateTime()
+            if self.checkingFrequency=="Weekly":
+                recheckingWaitIntervalHours:float=settingsSaveFile.get("Weekly_Rechecking_Frequency", 1)
+            else:
+                recheckingWaitIntervalHours:float=settingsSaveFile.get("Monthly_Rechecking_Frequency", 3)
+            recheckingTime=currentTime.addSecs(int(recheckingWaitIntervalHours*60*60))
+            recheckingTime=recheckingTime.toString("dd-MM-yyyy hh:mm:ss")
+        else:
+            recheckingTime="-"
+        column=list(dataBaseColumnsAndDataTypes.keys()) 
         logData[column[1]]=calendar.month_name[reportMonth]
         logData[column[2]]=reportWeek
         logData[column[3]]=str(self.isEveryoneFilled)
         logData[column[4]]=str(self.unfilled_teams)
         logData[column[5]]=str(self.isReportGenerated)
-        logData[column[6]]=str(datetime.now())
+        logData[column[6]]=QDateTime.currentDateTime().toString("dd-MM-yyyy hh:mm:ss")
+        logData[column[8]]=recheckingTime
         #checking for iterations ran data if not found taking 1, if found taking from database and incrementing by 1
-        logDatabase=Database(dataBasePath=fr"{logFilePath}",TableName=self.reportName,columnsAndDataTypes=columnsAndDataTypes)
-        logDatabase.cursor.execute(f"""SELECT * FROM '{self.reportName}' 
-                                   WHERE {column[1]} = ? AND
-                                        {column[2]} = ?
-                                    ORDER BY {column[7]} DESC
-                                    LIMIT 1""",(calendar.month_name[reportMonth],reportWeek))
-        row=logDatabase.cursor.fetchone()
-        if row==None or len(row)==0:
-            logData[column[7]]=1
+        try:
+            tempIterationsRan=int(logDatabase.getLatestData(tableName=self.reportName, columnName=column[7]))
+        except ValueError:
+            tempIterationsRan=None
+        if isinstance(tempIterationsRan,int):
+            logData[column[7]]=tempIterationsRan+1
+            self.checkingIterationsRan=tempIterationsRan+1
         else:
-            logData[column[7]]=int(row[7])+1
-            self.checkingIterationsRan=int(row[7])+1
-        logDatabase.insertData(data=logData,saveChanges=True)
+            logData[column[7]]=1
+        logDatabase.insertData(tableName=self.reportName,data=logData,saveChanges=True)
         logDatabase.disconnect(saveChanges=True)
 
     #default generate report procedure runs a macro,copy internal links from template to generated pdf
@@ -188,7 +207,9 @@ class KPIreportVerifier:
     def generateReport(self) -> None:        
         if self.isEveryoneFilled==False:
             print("Report completion check failed")
-        didMacroRun=runExcelMacro(excelFilePath=self.report_location, modulename=self.MacroModule, macroName=self.macroName)
+        didMacroRun=runExcelMacro(excelFilePath=self.report_location, 
+                                  modulename=self.MacroModule, macroName=self.macroName,
+                                  saveExcelFile= self.isExternalDataRefreshRequired==True)
         isLinksCopied=copyPasteLinksofPDF(sourcePDF=self.reportTemplatePDFLocation,destinationPDF=self.reportPDFLocation)
         if not (didMacroRun and isLinksCopied):
             print(f"Report generation failed"
@@ -202,21 +223,15 @@ class KPIreportVerifier:
     
     #update the current iteration data if report generation is completed
     def markReportGenerationStatus(self):
-        column=list(columnsAndDataTypes.keys())
-        logDatabase=Database(dataBasePath=fr"{logFilePath}",TableName=self.reportName,columnsAndDataTypes=columnsAndDataTypes)
-        logDatabase.cursor.execute(f"""SELECT * FROM '{self.reportName}' 
-                                   WHERE {column[1]} = ? AND
-                                        {column[2]} = ?
-                                    ORDER BY {column[7]} DESC
-                                    LIMIT 1""",(calendar.month_name[reportMonth],reportWeek))
-        row=logDatabase.cursor.fetchone()
-        if not(row==None or len(row)==0):
-            rowID=row[0]
-            logDatabase.cursor.execute(f"""UPDATE '{self.reportName}'
-                                           SET {column[5]} = ?
-                                           WHERE {column[0]} = ?
-                                        """,(str(self.isReportGenerated),rowID))
-
+        column=list(dataBaseColumnsAndDataTypes.keys())
+        logDatabase=Database(dataBasePath=fr"{logFilePath}")
+        latestData=logDatabase.getLatestRow(tableName=self.reportName)
+        reportMonthName=str(calendar.month_name[reportMonth])
+        if reportMonthName in latestData and str(reportWeek) in latestData:
+            logDatabase.changeLatestData(tableName=self.reportName,columnName=column[5],value=str(self.isReportGenerated))
+            logDatabase.changeLatestData(tableName=self.reportName,columnName=column[8],value="-")
+        else:
+            print(f"markReportGenerationStatus failed cannot find the report for month {reportMonth} and week {reportWeek}")
         logDatabase.disconnect(saveChanges=True)
 
 
@@ -244,7 +259,7 @@ def readExcelCell(excelFilePath: str, sheetName: str, cellAddress: str):
     return cell_value
 
 #runs a macro using win32com returns true if macro ran successfully
-def runExcelMacro(excelFilePath:str,modulename:str,macroName:str)-> bool:
+def runExcelMacro(excelFilePath:str,modulename:str,macroName:str,saveExcelFile:bool)-> bool:
         if os.path.exists(excelFilePath)==False:
             print("Excel file not found")
             return False
@@ -264,7 +279,7 @@ def runExcelMacro(excelFilePath:str,modulename:str,macroName:str)-> bool:
             print(f"Error running macro: {e}")
             return False
         finally:
-            workBook.Close(SaveChanges=True)
+            workBook.Close(SaveChanges=saveExcelFile)
             excelApp.Quit()
             workBook = None
             excelApp = None

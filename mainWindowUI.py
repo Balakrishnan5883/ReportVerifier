@@ -1,20 +1,24 @@
 from PySide6.QtWidgets import (QMainWindow,QWidget,QPushButton,QVBoxLayout,QStatusBar,QLabel,QLineEdit
                                ,QGridLayout,QHBoxLayout,QSizePolicy,QDoubleSpinBox,QTimeEdit,
-                               QFileDialog,QCheckBox,QScrollArea,QMessageBox,QComboBox)
+                               QFileDialog,QCheckBox,QScrollArea,QMessageBox,QComboBox,QTextEdit)
 from PySide6.QtGui import  QIcon
-from PySide6.QtCore import QSize,Qt,QTimer,QTime,Signal
+from PySide6.QtCore import QSize,Qt,QTimer,QTime,Signal,QDateTime
 from CheckUnfilledTeams import KPIreportVerifier,supportedExcelExtensions,runExcelMacro
 import json
 from datetime import datetime
-import os
+import os,sys
+import ast
+
+from LogData import Database
 
 from applicationData import (reportsAndTeamsDict,reports,reportMonth,settingsSaveFile,settingsfileName,settingsFilePath,
                        reportWeek,settingsIcon,appName,appIcon,mainWindowHeight,
-                       mainWindowWidth)
+                       mainWindowWidth,logFilePath,dataBaseColumnsAndDataTypes)
 import calendar
 from copyPasteLinksOfPDF import copyPasteLinksofPDF
 import types
 
+        
 
 # Settings window
 class settingsWidget(QWidget):
@@ -137,7 +141,7 @@ class settingsWidget(QWidget):
         #finding which browse button was clicked
         button=self.sender()
         if isinstance(button, QPushButton):
-            key=button.objectName()
+            key:str=button.objectName()
 
         #extracting path from selected file from File browser UI
         pathValue=QFileDialog.getOpenFileName(caption=f"{key}")
@@ -222,7 +226,6 @@ class settingsWidget(QWidget):
 class individualReportLayout():
     """This class creates single report UI objects with Teams """    
     def __init__(self,reportName) -> None:
-
         #creating objects and setting object name for later identification
         self.layoutTitle=QLabel(reportName)
         self.reportName=reportName
@@ -233,6 +236,7 @@ class individualReportLayout():
         self.refreshButton.setObjectName(f"{self.reportName}_RefreshButton")
         self.refreshButton.setStyleSheet("background-color: rgba(255, 255, 255, 0);")
         self.buttonsList:list[QPushButton]=[]
+        
 
         
         self.updatedTimeLabel=QLabel("Last Updated: Waiting for refresh")
@@ -246,8 +250,6 @@ class individualReportLayout():
         self.reportBackgroundLabel.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         #UI objects are arranged here
-        self.masterLayout=QGridLayout()
-
         self.Layout1=QGridLayout()
         self.Layout1.addWidget(self.reportBackgroundLabel, 1, 1,3,2)
         self.Layout1.addWidget(self.layoutTitle, 1, 1,1,3)
@@ -256,9 +258,6 @@ class individualReportLayout():
         self.Layout1.addWidget(self.generateReportButton, 3, 2)
         self.Layout1.addWidget(self.activeTimeofReport, 3, 3)
 
-        self.firstRowLayout=QHBoxLayout()
-        self.firstRowLayout.addWidget(self.refreshButton)
-        self.firstRowLayout.addWidget(self.layoutTitle)
         
 
     def addButton(self,buttonWidth:int, buttonHeight:int,buttonName:str,positionX:int=0,positionY:int=0
@@ -271,7 +270,7 @@ class individualReportLayout():
         self.button.setObjectName(f"{self.reportName}_{buttonDescription}")
         self.button.setIcon(QIcon(imagePath))
         self.button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        self.button.setStyleSheet("background-color: rgba(255, 255, 255, 0);")
+        self.button.setStyleSheet("background : transparent;")
         if not(toolTip==""):
             self.button.setToolTip(toolTip)
         self.button.setToolTipDuration(2000)
@@ -279,7 +278,6 @@ class individualReportLayout():
         self.buttonsList.append(self.button)
         # after creating buttons arranging it in the layout
         self.setDefaultLayout()
-
 
     def setDefaultLayout(self) -> None:
         """since team buttons is created dynamically layout is updated after adding buttons"""
@@ -300,12 +298,21 @@ class individualReportLayout():
     def getLayout(self):
         return self.Layout1
 
+class consoleRedirector():
+    def __init__(self,textEdit:QTextEdit) :
+        self.textEdit=textEdit
 
+    def write(self,text):
+        self.textEdit.append(text)
+        self.textEdit.ensureCursorVisible()
+    def flush(self):
+        pass
 
 class KPIMainWindow(QMainWindow):
 
     def __init__(self) -> None:
         super().__init__()
+        self.redirectConsoleToLineEdit()
         self.setWindowTitle(appName)
         self.setWindowIcon(QIcon(appIcon))
         self.resize(mainWindowWidth,mainWindowHeight)
@@ -319,11 +326,10 @@ class KPIMainWindow(QMainWindow):
         #settings object is created here-----------------------------------------------------------------------------------
         self.settingsWindow=settingsWidget()
         self.settingsButton.clicked.connect(self.settingsWindow.show)
-
+        self.recheckingTime:QDateTime
         self.messageBox=QMessageBox()
         if settingsSaveFile.get("Auto_check_report", False) :
-            self.refreshAllData()
-
+            self.initalizeRefreshData()
 
     def createUI(self):
         """Creating all UI for dashboard and storing it in dictionary"""
@@ -359,6 +365,17 @@ class KPIMainWindow(QMainWindow):
         self.startUnfilledRecheckProcedure=QPushButton()
         self.startUnfilledRecheckProcedure.clicked.connect(self.recheckProcedure)
 
+    def redirectConsoleToLineEdit(self):
+        self.logWindow=QWidget()
+        self.logWindow.setWindowTitle("Log Window")
+        self.logLineEdit=QTextEdit()
+        self.logLineEdit.setReadOnly(True)
+        tempLayout=QHBoxLayout()
+        tempLayout.addWidget(self.logLineEdit)
+        self.logWindow.setLayout(tempLayout)
+        self.consoleRedirector=consoleRedirector(self.logLineEdit)
+        sys.stdout=self.consoleRedirector
+
     def loadUnfilledTeamsLogic(self):
         """creating all report verifier objects and storing it in dictionary"""
         self.reportVerifierDict:dict[str,KPIreportVerifier]={}
@@ -385,6 +402,12 @@ class KPIMainWindow(QMainWindow):
         self.reportVerifierDict["Technical Sales Support"].MacroModule="ThisWorkbook"
         self.reportVerifierDict["Technical Sales Support"].macroName="PrintToPDF"
 
+        self.reportVerifierDict["LT & Orders"].reportPDFName="Lead Time Corporate"
+        self.reportVerifierDict["On Time Delivery"].reportPDFName="OTD report"
+        self.reportVerifierDict["Efficiency"].reportPDFName="Efficiency"
+        self.reportVerifierDict["NC"].reportPDFName="NC"
+        self.reportVerifierDict["Claims"].reportPDFName="Claims"
+        self.reportVerifierDict["Technical Sales Support"].reportPDFName="TSS"
 
         # if generate report procedure is not similar to all reports then procedure can be manually written and connected to separate instance
         self.reportVerifierDict["LT & Orders"].generateReport=types.MethodType(LTGenerateReportOverride,self.reportVerifierDict["LT & Orders"])
@@ -441,6 +464,34 @@ class KPIMainWindow(QMainWindow):
             for teamButton in self.reportsLayoutDict[reportKey].buttonsList:
                 teamButton.setStyleSheet("background-color: rgba(0, 0, 0, 0);")
             self.reportsLayoutDict[reportKey].updatedTimeLabel.setText(f"Error report not updated")
+
+    def initalizeRefreshData(self)->None:
+        columns=list(dataBaseColumnsAndDataTypes.keys())
+        logDatabase=Database(dataBasePath=fr"{logFilePath}")
+        currentDateTime=QDateTime.currentDateTime()
+        for report in reports:
+            recheckDateTime=str(logDatabase.getLatestData(tableName=report,columnName=columns[8]))
+            recheckDateTime=QDateTime.fromString(recheckDateTime,"dd-MM-yyyy HH:mm:ss")
+            if recheckDateTime.isValid() and currentDateTime.secsTo(recheckDateTime)<0 :
+                self.reportsLayoutDict[report].refreshButton.click()
+            else:
+                self.loadLastRefreshData(report=report)
+
+    def loadLastRefreshData(self,report) -> None:
+        logDatabase=Database(dataBasePath=fr"{logFilePath}")
+        print(f"Loading Last saved data for {report}")
+        reportStatus=logDatabase.getLatestRow(report)
+        unFilledTeamsList:list=ast.literal_eval(reportStatus[4])
+        reportButtons=self.reportsLayoutDict[report].buttonsList
+        for teamButton in reportButtons:
+            for teamName in unFilledTeamsList:
+                if teamName in teamButton.objectName():
+                    teamButton.setStyleSheet("background-color: rgba(255, 0, 0, 0.2)")
+            
+        for teamButton in reportButtons:
+            if teamButton.styleSheet()!="background-color: rgba(255, 0, 0, 0.2)":
+                teamButton.setStyleSheet("background-color: rgba(0, 255, 0, 0.2);")
+        self.reportsLayoutDict[report].updatedTimeLabel.setText(f"Last Updated : {reportStatus[6]}")
             
     def refreshAllData(self) -> None:
         print("Refreshing all data")
@@ -522,7 +573,8 @@ class KPIMainWindow(QMainWindow):
         # changing properties of reportVerifier object from settingsSaveFile and starting generate report procedure
         if activeReport.isEveryoneFilled==True or checkCompletion==False:
             tempPath1:str=settingsSaveFile.get(f"{reportKey}_Excel_Path", "")
-            tempPath1=tempPath1.replace(".xlsm",".pdf")
+            tempPath1=os.path.dirname(tempPath1)
+            tempPath1=fr"{tempPath1}\{activeReport.reportPDFName}.pdf"
             tempPath2=settingsSaveFile.get(f"{reportKey}_Template_PDF_Location", "")
             activeReport.reportPDFLocation=tempPath1
             activeReport.reportTemplatePDFLocation=tempPath2
@@ -531,23 +583,28 @@ class KPIMainWindow(QMainWindow):
 
     def recheckProcedure(self) -> None:
         """Used for auto triggering report checking and generating"""
-
-        #loading values from settingsSaveFile 
-        weeklyRecheckingFrequencyMS:int=settingsSaveFile.get("Weekly_Rechecking_Frequency", 1)*60*60*1000
+        if not self.recheckingTime.isNull():
+            currentDateTimeObject=QDateTime.currentDateTime()
+            recheckingIntervalMS:int=currentDateTimeObject.secsTo(self.recheckingTime)
+        else:
+            recheckingIntervalMS:int=settingsSaveFile.get("Weekly_Rechecking_Frequency", 1)*60*60*1000
         if settingsSaveFile.get("Auto_check_report", False) :
             print(f"Auto check initiated checking for month {calendar.month_name[reportMonth]} and week:{reportWeek} \n")
-
+        
             #using qtimer for rechecking triggers
             self.unFilledRecheckTimer:QTimer=QTimer(self)
             self.unFilledRecheckTimer.timeout.connect(self.autoCheckAndGenerateReport)
-            self.unFilledRecheckTimer.start(weeklyRecheckingFrequencyMS) 
-            self.autoCheckAndGenerateReport()
+            if recheckingIntervalMS<0:
+                self.autoCheckAndGenerateReport()
+            else:
+                self.unFilledRecheckTimer.start(recheckingIntervalMS) 
         else:
             print("Auto check not enabled")
         
 
     def autoCheckAndGenerateReport(self) -> None:
             """checks the report creates a message box showing status, generates report if it is enabled"""
+            weeklyRecheckingFrequencyMS:int=settingsSaveFile.get("Weekly_Rechecking_Frequency", 24)*60*60*1000
             monthlyRecheckingFrequencyMS:int=settingsSaveFile.get("Monthly_Rechecking_Frequency", 3)*60*60*1000
             self.isRecheckRequired=True
             message="_________________________________________________\n"
@@ -590,13 +647,16 @@ class KPIMainWindow(QMainWindow):
                 print("All weekly reports generated")
                 self.unFilledRecheckTimer.stop()
                 self.unFilledRecheckTimer.start(monthlyRecheckingFrequencyMS)
-            
+            else:
+                print("All weekly reports not generated")
+                self.unFilledRecheckTimer.stop()
+                self.unFilledRecheckTimer.start(weeklyRecheckingFrequencyMS)
+
             if all(reportVerifier.isReportGenerated==True for reportVerifier in self.reportVerifierDict.values()):
                 self.isRecheckRequired=False
 
             #If all completed rechecking procedure is closed
             if self.isRecheckRequired==False:
-
                 print("Auto check completed report closing Timer")
                 self.unFilledRecheckTimer.stop()
 
@@ -636,7 +696,8 @@ def LTGenerateReportOverride(self:KPIreportVerifier):
         print(f"{self.reportName} : Report generation procedure overridden")
         if self.isEveryoneFilled==False:
             print("Report completion check failed")
-        didMacroRun=runExcelMacro(excelFilePath=self.report_location, modulename=self.MacroModule, macroName=self.macroName)
+        didMacroRun=runExcelMacro(excelFilePath=self.report_location, modulename=self.MacroModule, 
+                                  macroName=self.macroName,saveExcelFile=True)
         isLinksCopied=copyPasteLinksofPDF(sourcePDF=self.reportTemplatePDFLocation,destinationPDF=self.reportPDFLocation)
         if not (didMacroRun and isLinksCopied):
             print(f"Report generation failed"
