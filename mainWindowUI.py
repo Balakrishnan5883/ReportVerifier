@@ -3,7 +3,7 @@ from PySide6.QtWidgets import (QMainWindow,QWidget,QPushButton,QVBoxLayout,QStat
                                QFileDialog,QCheckBox,QScrollArea,QMessageBox,QComboBox,QTextEdit)
 from PySide6.QtGui import  QIcon
 from PySide6.QtCore import QSize,Qt,QTimer,QTime,Signal,QDateTime
-from CheckUnfilledTeams import KPIreportVerifier,supportedExcelExtensions,runExcelMacro
+from CheckUnfilledTeams import KPIreportVerifier,supportedExcelExtensions,runExcelMacro,startOneDrive,stopOneDrive
 import json
 from datetime import datetime
 import os,sys
@@ -481,6 +481,9 @@ class KPIMainWindow(QMainWindow):
         logDatabase=Database(dataBasePath=fr"{logFilePath}")
         print(f"Loading Last saved data for {report}")
         reportStatus=logDatabase.getLatestRow(report)
+        if len(reportStatus)==0:
+            print(f"Error loading last saved data for {report}, no data found.")
+            return None
         unFilledTeamsList:list=ast.literal_eval(reportStatus[4])
         reportButtons=self.reportsLayoutDict[report].buttonsList
         for teamButton in reportButtons:
@@ -696,6 +699,7 @@ def LTGenerateReportOverride(self:KPIreportVerifier):
         print(f"{self.reportName} : Report generation procedure overridden")
         if self.isEveryoneFilled==False:
             print("Report completion check failed")
+        isOnedriveClosed=stopOneDrive()
         didMacroRun=runExcelMacro(excelFilePath=self.report_location, modulename=self.MacroModule, 
                                   macroName=self.macroName,saveExcelFile=True)
         isLinksCopied=copyPasteLinksofPDF(sourcePDF=self.reportTemplatePDFLocation,destinationPDF=self.reportPDFLocation)
@@ -707,4 +711,6 @@ def LTGenerateReportOverride(self:KPIreportVerifier):
             self.isReportGenerated=True
         else:
             self.isReportGenerated=False
+        if isOnedriveClosed:
+            startOneDrive()
         self.markReportGenerationStatus()

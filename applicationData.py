@@ -29,7 +29,10 @@ else:
 
 #week and month in integer 
 reportWeek:int = datetime.now().isocalendar()[1]
+
 reportMonth:int = datetime.now().month-1
+if reportMonth==0:
+    reportMonth=12
 
 #relative position of cell row or column varies based on reports and (month or week)
 LTActiveRowIndex=reportWeek+1

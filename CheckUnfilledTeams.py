@@ -4,6 +4,7 @@ import win32com.client as win32
 from datetime import datetime
 import calendar
 import tempfile
+import subprocess
 
 from PySide6.QtCore import QDateTime
 import openpyxl
@@ -40,7 +41,7 @@ class KPIreportVerifier:
         self.macroName:str
         self.isExternalDataRefreshRequired:bool=False
         self.tempReportPath:str=""
-        self.checkingIterationsRan:int
+        self.checkingIterationsRan:int=1
         
         self.getReportGeneratedStatus()
 
@@ -162,7 +163,7 @@ class KPIreportVerifier:
             self.checkingIterationsRan=int(latestRow[7])
         else:
             self.isReportGenerated:bool=False
-            self.checkingIterationsRan=0
+            self.checkingIterationsRan=1
         logDatabase.disconnect(saveChanges=False)
         return self.isReportGenerated
     
@@ -192,21 +193,28 @@ class KPIreportVerifier:
         #checking for iterations ran data if not found taking 1, if found taking from database and incrementing by 1
         try:
             tempIterationsRan=int(logDatabase.getLatestData(tableName=self.reportName, columnName=column[7]))
+            lastRecordedMonth=logDatabase.getLatestData(tableName=self.reportName, columnName=column[1])
+            lastRecordedWeek=int(logDatabase.getLatestData(tableName=self.reportName, columnName=column[2]))
         except ValueError:
             tempIterationsRan=None
-        if isinstance(tempIterationsRan,int):
+            lastRecordedMonth=None
+            lastRecordedWeek=None
+        if isinstance(tempIterationsRan,int)and calendar.month_name[reportMonth]==lastRecordedMonth and reportWeek==lastRecordedWeek:
             logData[column[7]]=tempIterationsRan+1
             self.checkingIterationsRan=tempIterationsRan+1
         else:
             logData[column[7]]=1
-        logDatabase.insertData(tableName=self.reportName,data=logData,saveChanges=True)
+        logDatabase.insertData(tableName=self.reportName,columnAndValue=logData,saveChanges=True)
         logDatabase.disconnect(saveChanges=True)
 
     #default generate report procedure runs a macro,copy internal links from template to generated pdf
     #mark report generation status in the database
     def generateReport(self) -> None:        
+        
         if self.isEveryoneFilled==False:
             print("Report completion check failed")
+
+        isOnedriveClosed=stopOneDrive()
         didMacroRun=runExcelMacro(excelFilePath=self.report_location, 
                                   modulename=self.MacroModule, macroName=self.macroName,
                                   saveExcelFile= self.isExternalDataRefreshRequired==True)
@@ -219,6 +227,8 @@ class KPIreportVerifier:
             self.isReportGenerated=True
         else:
             self.isReportGenerated=False
+        if isOnedriveClosed:
+            startOneDrive()
         self.markReportGenerationStatus()
     
     #update the current iteration data if report generation is completed
@@ -257,6 +267,38 @@ def readExcelCell(excelFilePath: str, sheetName: str, cellAddress: str):
         worksheet = None
         workbook = None
     return cell_value
+
+def startOneDrive():
+    oneDriveExePaths=[
+        os.path.join(os.environ["LOCALAPPDATA"], "Microsoft", "OneDrive","OneDrive.exe" ),
+        os.path.join(os.environ["PROGRAMFILES"], "Microsoft OneDrive","OneDrive.exe" ),
+        os.path.join(os.environ["PROGRAMFILES(X86)"], "Microsoft OneDrive","OneDrive.exe"),
+        os.path.join(os.environ["USERPROFILE"], "OneDrive")
+    ]
+    for path in oneDriveExePaths:
+        if os.path.exists(path):
+            try:
+                subprocess.Popen(executable=path,args="/background")
+            except subprocess.CalledProcessError:
+                print(f"Failed to start OneDrive at {path}")
+            finally:
+                return
+    
+
+def stopOneDrive()->bool:
+
+    outputCheck=subprocess.check_output('tasklist /fi "imagename eq OneDrive.exe"', shell=True)
+    if "No tasks are running" in str(outputCheck) : 
+        return False
+    
+    try:
+        subprocess.run(["taskkill", "/f", "/im", "OneDrive.exe"], shell=True)
+    except subprocess.CalledProcessError:
+        print(f"onedrive not running or not installed.")
+        return False
+    return True
+    
+    
 
 #runs a macro using win32com returns true if macro ran successfully
 def runExcelMacro(excelFilePath:str,modulename:str,macroName:str,saveExcelFile:bool)-> bool:
